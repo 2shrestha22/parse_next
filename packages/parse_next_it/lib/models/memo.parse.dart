@@ -7,8 +7,7 @@ final class MemoFields extends Fields<Memo> {
   const MemoFields();
 
   StringField<Memo> get text => const StringField('text');
-  ComparableField<Memo, DateTime> get dueAt =>
-      const ComparableField('due_at', encodeDate);
+  DateField<Memo> get dueAt => const DateField('due_at');
   ListField<Memo, String> get tags => const ListField('tags');
   Field<Memo, Mood> get mood => Field('mood', (v) => v.name);
 }

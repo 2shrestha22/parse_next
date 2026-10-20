@@ -45,3 +45,14 @@ Parse.Cloud.define('findUsers', request => usersNamed(request.params.usernames))
 Parse.Cloud.define('findUsersOrNull', request =>
   request.params.usernames && usersNamed(request.params.usernames),
 );
+
+// The LiveQuery server's own count of connected sockets, as of its last
+// subscribe, unsubscribe or disconnect; its connect events report the count
+// from before the socket was added.
+let liveClients = 0;
+Parse.Cloud.onLiveQueryEvent(({ event, clients }) => {
+  if (['subscribe', 'unsubscribe', 'ws_disconnect'].includes(event)) {
+    liveClients = clients;
+  }
+});
+Parse.Cloud.define('liveClients', () => liveClients);

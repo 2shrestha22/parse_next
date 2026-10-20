@@ -111,8 +111,7 @@ final class PostFields extends Fields<Post> {
   ComparableField<Post, double> get ratio => const ComparableField('ratio');
   ComparableField<Post, double> get score => const ComparableField('score');
   Field<Post, bool> get published => const Field('published');
-  ComparableField<Post, DateTime> get publishedAt =>
-      const ComparableField('publishedAt', encodeDate);
+  DateField<Post> get publishedAt => const DateField('publishedAt');
   ListField<Post, String> get tags => const ListField('tags');
   ExistsField<Post> get meta => const ExistsField('meta');
   GeoField<Post> get location => const GeoField('location');

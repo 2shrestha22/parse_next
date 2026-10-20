@@ -10,8 +10,7 @@ final class ItemFields extends Fields<Item> {
   StringField<Item> get note => const StringField('note');
   ComparableField<Item, int> get rank => const ComparableField('rank');
   ComparableField<Item, double> get score => const ComparableField('score');
-  ComparableField<Item, DateTime> get at =>
-      const ComparableField('happened_at', encodeDate);
+  DateField<Item> get at => const DateField('happened_at');
   Field<Item, Kind> get kind => Field('kind', (v) => v.name);
   Field<Item, bool> get flag => const Field('flag');
   ListField<Item, String> get tags => const ListField('tags');

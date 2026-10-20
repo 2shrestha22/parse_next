@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'codec.dart';
 import 'exception.dart';
@@ -10,6 +11,7 @@ import 'exception.dart';
 part 'auth.dart';
 part 'batch.dart';
 part 'collection.dart';
+part 'live.dart';
 part 'query.dart';
 
 final class ParseClient {
@@ -31,7 +33,11 @@ final class ParseClient {
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
     SessionStore? sessions,
-  }) : _http = httpClient ?? http.Client(),
+    Uri? liveQueryServer,
+  }) : liveQueryServer =
+           liveQueryServer ??
+           server.replace(scheme: server.scheme == 'https' ? 'wss' : 'ws'),
+       _http = httpClient ?? http.Client(),
        _ownsHttp = httpClient == null,
        _sessions = sessions ?? InMemorySessionStore();
 
@@ -44,6 +50,10 @@ final class ParseClient {
   /// Covers the whole request, from sending to the last byte of the body.
   final Duration timeout;
 
+  /// Where [Query.live] connects: [server] with `ws` or `wss` unless set,
+  /// for a LiveQuery server on another host.
+  final Uri liveQueryServer;
+
   final http.Client _http;
   final bool _ownsHttp;
   final SessionStore _sessions;
@@ -51,6 +61,7 @@ final class ParseClient {
   bool _loaded = false;
   Future<void>? _loading;
   final _changes = StreamController<_Session?>.broadcast();
+  late final _live = _LiveSocket(this);
 
   Collection<T, F, O> collection<T, F, O>(ParseSchema<T, F, O> schema) =>
       Collection._(this, schema);
@@ -105,7 +116,9 @@ final class ParseClient {
       ? server.path.substring(0, server.path.length - 1)
       : server.path;
 
+  /// Also closes the live query socket and ends every [Query.live] stream.
   void close() {
+    _live.close();
     _changes.close();
     if (_ownsHttp) _http.close();
   }
@@ -269,6 +282,12 @@ Future<T> _request<T extends Object>(
   }
   throw _exception(code, message, status, path);
 }
+
+int _statusOf(int? code) => switch (code) {
+  1 => 500,
+  101 => 404,
+  _ => 400,
+};
 
 ParseException _exception(int? code, String message, int status, String path) =>
     switch (code) {

@@ -30,10 +30,8 @@ abstract base class Fields<T> {
   const Fields();
 
   ComparableField<T, String> get id => ComparableField('objectId');
-  ComparableField<T, DateTime> get createdAt =>
-      ComparableField('createdAt', encodeDate);
-  ComparableField<T, DateTime> get updatedAt =>
-      ComparableField('updatedAt', encodeDate);
+  DateField<T> get createdAt => DateField('createdAt');
+  DateField<T> get updatedAt => DateField('updatedAt');
 }
 
 /// For maps, files, bytes and polygons. Postgres has no equality for maps,
@@ -84,6 +82,22 @@ final class ComparableField<T, V> extends Field<T, V> {
   Cond<T> gte(V value) => _cond({r'$gte': _encode(value)});
   Cond<T> lt(V value) => _cond({r'$lt': _encode(value)});
   Cond<T> lte(V value) => _cond({r'$lte': _encode(value)});
+
+  Sort<T> get asc => Sort._(_key);
+  Sort<T> get desc => Sort._('-$_key');
+}
+
+/// No `ne`, `oneOf` or `noneOf`: Postgres passes a `{"__type":"Date"}` inside
+/// `$ne`, `$in` or `$nin` to SQL unconverted and fails with a 500
+/// (`buildWhereClause` in PostgresStorageAdapter.js).
+final class DateField<T> extends ExistsField<T> {
+  const DateField(super._key);
+
+  Cond<T> eq(DateTime value) => _cond(encodeDate(value));
+  Cond<T> gt(DateTime value) => _cond({r'$gt': encodeDate(value)});
+  Cond<T> gte(DateTime value) => _cond({r'$gte': encodeDate(value)});
+  Cond<T> lt(DateTime value) => _cond({r'$lt': encodeDate(value)});
+  Cond<T> lte(DateTime value) => _cond({r'$lte': encodeDate(value)});
 
   Sort<T> get asc => Sort._(_key);
   Sort<T> get desc => Sort._('-$_key');
@@ -330,6 +344,51 @@ final class Query<T, F, O> {
       });
       page = page._with(where: _where == null ? after : _where & after);
     }
+  }
+
+  /// Changes to matching objects as the server sees them, over one
+  /// WebSocket per [ParseClient] that opens with the first listener and
+  /// closes when the last one cancels.
+  ///
+  /// The stream emits [Subscribed] each time the server confirms the
+  /// subscription: first after listening, then after every reconnect.
+  /// Changes before a [Subscribed] may be missing and are never replayed, so
+  /// (re)load the state after each one. A lost connection is retried after
+  /// 1 s, doubling up to 30 s, and never ends the stream.
+  ///
+  /// The subscription keeps the session of the moment it is listened to;
+  /// a later login or logout does not change it, and one made without a
+  /// session sees only what anyone may read. An invalid token is not an
+  /// error: the server treats it as no session.
+  ///
+  /// A server error for this subscription, such as an invalid `matches`
+  /// pattern (102), is emitted as its [ParseException] with the HTTP status
+  /// the server gives that code elsewhere, and ends the stream. Only classes
+  /// in the server's `liveQuery.classNames` publish changes; a subscription
+  /// to any other class is accepted and never emits.
+  ///
+  /// The server matches in JavaScript (QueryTools.js): strings compare by
+  /// UTF-16 code unit, as on Mongo, and `withinBox` leaves out its edges.
+  /// Throws [ArgumentError] for the conditions it cannot match:
+  /// [StringField.fullText], [PointerField.matchesQuery], [RelationField.of],
+  /// any condition on `createdAt` or `updatedAt`, `contains` on a pointer
+  /// list, and an empty `containsAll`. Throws
+  /// [StateError] when the query has [include], [orderBy], [limit] or
+  /// [skip], which a live query cannot apply.
+  Stream<LiveEvent<T>> live() {
+    if (_include.isNotEmpty ||
+        _order.isNotEmpty ||
+        _skip != null ||
+        _limit != null) {
+      throw StateError(
+        'live() matches single objects; '
+        'remove include, orderBy, skip and limit',
+      );
+    }
+    return _client._live.subscribe(
+      _collection._schema,
+      _liveWhere(_where?._where ?? const {}),
+    );
   }
 
   /// The listed [keys] of each match, undecoded; same paging as [find].

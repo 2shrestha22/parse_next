@@ -170,16 +170,11 @@ final class BatchOp<R> {
       final num n => n.toInt(),
       _ => null,
     };
-    final status = switch (code) {
-      1 => 500,
-      101 => 404,
-      _ => 400,
-    };
     final message = switch (error['error']) {
       final String m => m,
       _ => '',
     };
-    return _exception(code, message, status, _path);
+    return _exception(code, message, _statusOf(code), _path);
   }
 }
 

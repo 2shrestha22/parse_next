@@ -214,9 +214,7 @@ _Field _field(String model, FormalParameterElement p, String key) {
   }
   if (_dateTime.isExactlyType(type)) {
     return (
-      fields:
-          'ComparableField<$model, DateTime> get $name => '
-          'const ComparableField($k, encodeDate);',
+      fields: 'DateField<$model> get $name => const DateField($k);',
       ops:
           '${n}SetOps<DateTime> get $name => '
           'const ${n}SetOps($k, encodeDate);',

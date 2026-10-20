@@ -68,6 +68,8 @@ step "integration tests"
 "${compose[@]}" down -v
 trap '"${compose[@]}" down -v' EXIT
 "${compose[@]}" up -d --wait
-(cd packages/parse_next_it && dart test -p vm)
+# live_test.dart restarts the servers, so the live files run one at a time,
+# after the rest.
+(cd packages/parse_next_it && dart test -p vm -x live && dart test -p vm -t live -j 1)
 
 step "all gates passed"

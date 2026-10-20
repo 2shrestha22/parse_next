@@ -16,10 +16,8 @@ final class PostFields extends Fields<Post> {
   ComparableField<Post, num> get weight => const ComparableField('weight');
   Field<Post, bool> get published => const Field('published');
   Field<Post, bool> get pinned => const Field('pinned');
-  ComparableField<Post, DateTime> get publishedAt =>
-      const ComparableField('published_at', encodeDate);
-  ComparableField<Post, DateTime> get editedAt =>
-      const ComparableField('editedAt', encodeDate);
+  DateField<Post> get publishedAt => const DateField('published_at');
+  DateField<Post> get editedAt => const DateField('editedAt');
   Field<Post, PostStatus> get status => Field('status', (v) => v.name);
   Field<Post, PostStatus> get previousStatus =>
       Field('previousStatus', (v) => v.name);
