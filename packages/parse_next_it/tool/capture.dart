@@ -378,6 +378,54 @@ class _Capture {
       save: 'batch_transaction_failure',
     );
 
+    const anonymous = {
+      'authData': {
+        'anonymous': {'id': 'capture-anonymous'},
+      },
+    };
+    await _call(
+      'POST',
+      '/users',
+      body: anonymous,
+      save: 'user_log_in_with_new',
+    );
+    await _call(
+      'POST',
+      '/users',
+      body: anonymous,
+      save: 'user_log_in_with_existing',
+    );
+    await _call(
+      'POST',
+      '/users',
+      body: {
+        'authData': {
+          'unknown': {'id': 'x'},
+        },
+      },
+      expectError: true,
+      save: 'error_252_unsupported_auth',
+    );
+
+    await _call(
+      'PUT',
+      '/config',
+      master: true,
+      body: {
+        'params': {
+          'flag': true,
+          'limit': 2.5,
+          'name': 'x',
+          'nested': {
+            'list': [1, 'two'],
+          },
+          'secret': 'master only',
+        },
+        'masterKeyOnly': {'secret': true},
+      },
+    );
+    await _call('GET', '/config', save: 'config');
+
     return _fixtures;
   }
 
@@ -426,7 +474,9 @@ class _Capture {
         },
       },
     );
-    // parse-server's REST schema API cannot create unique indexes.
+    // parse-server's REST schema API cannot create unique indexes. The
+    // config is dropped because `PUT /config` only merges, so keys from an
+    // earlier run would stay in the config fixture.
     await _exec(switch (backend) {
       'mongo' => [
         'mongo',
@@ -434,7 +484,8 @@ class _Capture {
         '--quiet',
         'parse',
         '--eval',
-        'db.Post.createIndex({slug: 1}, {unique: true})',
+        'db.Post.createIndex({slug: 1}, {unique: true}); '
+            'db.getCollection("_GlobalConfig").deleteMany({})',
       ],
       'postgres' => [
         'postgres',
@@ -444,7 +495,8 @@ class _Capture {
         '-d',
         'parse',
         '-c',
-        'CREATE UNIQUE INDEX post_slug_unique ON "Post" ("slug")',
+        'CREATE UNIQUE INDEX post_slug_unique ON "Post" ("slug"); '
+            'DELETE FROM "_GlobalConfig"',
       ],
       _ => throw ArgumentError(backend),
     });
@@ -547,6 +599,8 @@ class _Capture {
                 _placeholder(value, 'obj', 7);
               case 'sessionToken':
                 _placeholder(value, 'r:session', 4);
+              case 'username' when json.containsKey('authDataResponse'):
+                _placeholder(value, 'user', 4);
               case 'name' when json.containsKey('url'):
                 _placeholder(value, 'file', 4, suffix: '_hello.txt');
             }

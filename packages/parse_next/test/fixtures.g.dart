@@ -93,6 +93,34 @@ const fixtures = <String, String>{
   "status": 500
 }
 ''',
+  'config.json': r'''
+{
+  "request": {
+    "method": "GET",
+    "path": "/config"
+  },
+  "response": {
+    "masterKeyOnly": {
+      "flag": false,
+      "limit": false,
+      "name": false,
+      "nested": false
+    },
+    "params": {
+      "flag": true,
+      "limit": 2.5,
+      "name": "x",
+      "nested": {
+        "list": [
+          1,
+          "two"
+        ]
+      }
+    }
+  },
+  "status": 200
+}
+''',
   'create_all_fields.json': r'''
 {
   "request": {
@@ -364,6 +392,26 @@ const fixtures = <String, String>{
   "response": {
     "code": 209,
     "error": "Invalid session token"
+  },
+  "status": 400
+}
+''',
+  'error_252_unsupported_auth.json': r'''
+{
+  "request": {
+    "body": {
+      "authData": {
+        "unknown": {
+          "id": "x"
+        }
+      }
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "code": 252,
+    "error": "This authentication method is unsupported."
   },
   "status": 400
 }
@@ -1325,6 +1373,64 @@ const fixtures = <String, String>{
     "username": "carol"
   },
   "status": 200
+}
+''',
+  'user_log_in_with_existing.json': r'''
+{
+  "request": {
+    "body": {
+      "authData": {
+        "anonymous": {
+          "id": "capture-anonymous"
+        }
+      }
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "ACL": {
+      "obj0000009": {
+        "read": true,
+        "write": true
+      }
+    },
+    "authData": {
+      "anonymous": {
+        "id": "capture-anonymous"
+      }
+    },
+    "authDataResponse": {},
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "objectId": "obj0000009",
+    "sessionToken": "r:session0006",
+    "updatedAt": "2000-01-01T00:00:00.000Z",
+    "username": "user0001"
+  },
+  "status": 200
+}
+''',
+  'user_log_in_with_new.json': r'''
+{
+  "request": {
+    "body": {
+      "authData": {
+        "anonymous": {
+          "id": "capture-anonymous"
+        }
+      }
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "authDataResponse": {},
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "objectId": "obj0000009",
+    "sessionToken": "r:session0005",
+    "username": "user0001"
+  },
+  "status": 201
 }
 ''',
   'user_me.json': r'''

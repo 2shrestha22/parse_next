@@ -54,7 +54,9 @@ await posts.update(doc.id, (o) => [o.likes.increment(1), o.tags.addUnique(['news
 
 Writes are explicit. `update` sends Parse ops, which the server applies atomically; `replace` overwrites every field, and the last write wins. There is no dirty tracking and no `save()`. A field only offers the constraints and ops Parse supports for its type, so `o.title.increment(1)` does not compile.
 
-Every failure is a `ParseException`, a sealed class, so a `switch` over it is exhaustive. `DecodeError` is raised where a server row does not match the model. The SDK never retries: after a `NetworkError` a write may or may not have been applied.
+`f.tags.containsAny(['dart', 'flutter'])` matches a list holding at least one of the values.
+
+Every failure is a `ParseException`, a sealed class, so a `switch` over it is exhaustive. `DecodeError` is raised where a server row does not match the model; `tryFind()` returns one `Ok` or `Err` per row instead, so one bad row does not fail the page, and the `DecodeError` names the row in `id`. The SDK never retries: after a `NetworkError` a write may or may not have been applied.
 
 ## Auth
 
@@ -63,11 +65,12 @@ final auth = client.auth(const $UserSchema());
 
 await auth.signUp(password: 'secret', user: const User(username: 'ada'));
 await auth.logIn('ada', 'secret');
+await auth.logInWith('google', {'id': googleUserId, 'id_token': idToken});
 final user = await auth.current();
 await auth.logOut();
 ```
 
-`User` is your `@ParseClass('_User')` model. Once logged in, every request carries the session token. `auth.changes` emits the user on sign-up, login and `become`, and null on logout or when the server rejects the session (`InvalidSession`, which is still thrown to the caller).
+`User` is your `@ParseClass('_User')` model. Once logged in, every request carries the session token. `logInWith` logs in the user linked to that provider's `authData`, or signs one up; a token the provider rejects is `InvalidCredentials`. `auth.changes` emits the user on sign-up, either login and `become`, and null on logout or when the server rejects the session (`InvalidSession`, which is still thrown to the caller).
 
 ### Session store
 
@@ -103,10 +106,11 @@ final sub = posts.where((f) => f.likes.gte(10)).live().listen((event) {
 
 One WebSocket per client carries every subscription. A lost connection is retried with backoff and never ends the stream. **Events missed while disconnected are not replayed**: `Subscribed` is emitted after every (re)connect, so reload the state there. Only classes listed in the server's `liveQuery.classNames` publish events. Conditions the LiveQuery server cannot match correctly, such as `fullText` or any condition on `createdAt`, throw `ArgumentError`.
 
-## Cloud functions, batch and files
+## Cloud functions, config, batch and files
 
 - `@ParseFunctions` generates a typed client for cloud functions; see parse_next_generator.
-- `client.batch()` sends several writes in one request; each returns a handle whose `result` is `Ok` or `Err` after `send()`. Items are not transactional unless you call `send(transaction: true)`.
+- `client.config()` returns the app's config params as `Json`; params marked `masterKeyOnly` are not sent to clients.
+- `client.batch()` sends several writes in one request; each returns a handle whose `result` is a `Result`, `Ok` or `Err`, after `send()`. Items are not transactional unless you call `send(transaction: true)`.
 - `client.uploadFile(bytes, name: ..., contentType: ...)` returns a `ParseFile` to store in a field.
 
 ## Server caveats

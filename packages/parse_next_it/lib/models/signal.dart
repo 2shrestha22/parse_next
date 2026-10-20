@@ -12,6 +12,7 @@ final class Signal {
     this.tags,
     this.at,
     this.place,
+    this.links,
   });
 
   final String name;
@@ -20,4 +21,5 @@ final class Signal {
   final List<String>? tags;
   final DateTime? at;
   final GeoPoint? place;
+  final List<Pointer<Signal>>? links;
 }

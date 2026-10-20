@@ -24,7 +24,7 @@ Package names `parse_next` and `parse_next_generator` were unclaimed on pub.dev 
 
 **In scope:** wire codec, transport, CRUD with ops, typed queries, the generator, auth, cloud functions, batch, files, live queries.
 
-**Out of scope:** dirty tracking and `save()`, typed projections, local datastore and offline support, master key and admin APIs, push, `/config`, the schema-pull CLI, nested embedded classes. Each needs its own plan; none gets added quietly.
+**Out of scope:** dirty tracking and `save()`, typed projections, local datastore and offline support, master key and admin APIs, push, the schema-pull CLI, nested embedded classes. Each needs its own plan; none gets added quietly.
 
 ## Rules for the whole repo
 
@@ -41,7 +41,7 @@ Package names `parse_next` and `parse_next_generator` were unclaimed on pub.dev 
 | G9 | No skipped test without a reason string | CI fails on `skip: true` |
 
 Pinned at the start and changed only on purpose:
-- the Dart SDK lower bound (CI also tests the latest stable): **3.8.0**
+- the Dart SDK lower bound: **3.8.0**, the oldest SDK the code can compile on. CI runs one pinned SDK, **3.13.5**, with the lockfile enforced
 - the `parse-server` image (current major and the previous one): **`parseplatform/parse-server:9.10.5`**, previous major **`8.6.112`** (`PARSE_SERVER_VERSION`)
 - Mongo and Postgres versions: **`mongo:8.0.34`**, **`postgis/postgis:18-3.6`** pinned by digest
 
@@ -108,6 +108,10 @@ Later phases must follow these:
 | LiveQuery errors are `{"op":"error","error","code","reconnect","requestId"}`. A subscribe fails only for an invalid regex or too-deep query (102), a CLP denial (119) or a `_Session` subscription without a user (209). An invalid session token is not an error: the subscription is treated as anonymous (`getAuthForSessionToken` in `ParseLiveQueryServer.ts`). An `unsubscribe` for a subscription the server has not registered yet is an error with code 2 and no `requestId`. | Phase 9 |
 | A subscribe without `sessionToken` is matched with the token sent on `connect` (`_matchesACL` in `ParseLiveQueryServer.ts`), so a subscription made after logout would see the previous user's objects. The SDK sends no token on `connect`, only on each `subscribe`. | Phase 9 |
 | Only classes in `liveQuery.classNames` publish changes; a subscription to any other class is accepted and never receives an event. The server pings every 10 s and drops a socket that missed the last pong (`ParseWebSocketServer.js`); `dart:io` and browsers answer pings, so the SDK sends no keepalive. | Phase 9 |
+| `POST /users` with `authData` answers a new user with 201 and only `objectId`, `createdAt`, a generated `username`, `sessionToken` and `authDataResponse` (no `updatedAt`, no `ACL`), and an existing one with 200 and the whole user, including `authData`. With a session token the request links the `authData` to that user instead of logging in (`handleAuthData` in `RestWrite.js`), so `logInWith` never sends the stored token. | Phase 6 |
+| A rejected `authData` keeps the adapter's `Parse.Error` code (`handleAuthDataValidation` in `Auth.js`); the built-in adapters reject with 101, HTTP 404 (93 of their throws in `src/Adapters/Auth/`), so `logInWith` maps 101 to `InvalidCredentials`. A provider the server does not have is 252 `This authentication method is unsupported.`, HTTP 400, and stays `OtherParseError`; an adapter that throws a non-Parse error is 141. | Phase 6 |
+| `GET /config` without the master key leaves out every param marked `masterKeyOnly`, and also returns a `masterKeyOnly` map of the other keys (`getGlobalConfig` in `GlobalConfigRouter.js`). `PUT /config` merges into the stored params. | Phase 7 |
+| `$in` on an Array field matches a list holding any of the values on both databases: Postgres compiles it to `array_contains` (`buildWhereClause` in `PostgresStorageAdapter.js`, `sql/array/contains.sql`), which is `STRICT`, so an absent list never matches, as on Mongo; pointer lists work on both. `$in: []` is `IS NULL` on Postgres and matches only absent lists, so `containsAny([])` throws `ArgumentError`. LiveQuery's `contains` in `QueryTools.js` compares pointers by `className` and `objectId`, so `containsAny` on a pointer list matches live as in a find. | Phase 4, 9 |
 | Upload errors are HTTP 400: an anonymous upload is 130 `File upload by public is disabled.`, an empty body 130 `Invalid file upload.`, a name outside `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*` or over 128 characters 122 (`validateFilename` in `FilesAdapter.js`). | Phase 8 |
 
 ## Repo layout
@@ -231,6 +235,8 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 - `include`, `orderBy`, `limit`, `skip`, `count`, `first`
 - `stream()` with objectId-cursor pagination
 - `raw(keys:)`
+- `ListField.containsAny` (`$in`), proved by the query oracle and the live oracle on both databases, pointer lists included
+- `tryFind()`: `find` with one `Result` per row, where a row that does not decode is `Err(DecodeError)` carrying the row's objectId in `DecodeError.id`
 
 **Rules**
 - Date constraints always send `{"__type":"Date"}`.
@@ -274,6 +280,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 **Build**
 - `Auth<U>` with `signUp`, `logIn`, `logOut`, `become(token)`, `requestPasswordReset`, `current` and `changes`
+- `logInWith(provider, authData)`: third-party login through `POST /users`, on the same session path as `logIn`; no linking or unlinking. Covered by golden tests on fixtures captured with the built-in `anonymous` provider, which needs no server config
 - a `SessionStore` interface with an in-memory implementation in core
 
 **Rules**
@@ -292,7 +299,9 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 ## Phase 7: Cloud functions
 
-**Build:** a generator for `@ParseFunctions` abstract classes.
+**Build**
+- a generator for `@ParseFunctions` abstract classes
+- `ParseClient.config()`: the `params` of `GET /config` as `Json`, covered by a golden test on a captured fixture
 
 **Verify**
 - `cloud/main.js` has one fixture function per supported parameter and return type, and every one round-trips.
@@ -305,7 +314,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 ## Phase 8: Batch and files
 
 **Build**
-- `client.batch()` with typed handles: each added op returns a `BatchOp<R>` whose `result` is a sealed `BatchResult<R>` (`Ok` or `Err`) after one `send()`
+- `client.batch()` with typed handles: each added op returns a `BatchOp<R>` whose `result` is a sealed `Result<R>` (`Ok` or `Err`, shared with `Query.tryFind`) after one `send()`
 - file upload returning a `ParseFile`
 
 **Rules**
@@ -369,6 +378,6 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 - Web is a supported platform.
 - The master key stays out of v1.
 - The batch limit is settled: there is no default limit (see the Phase 8 Rules).
-- Dart SDK lower bound is 3.8.0, raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
+- The lower bound is the oldest SDK whose language features and dependencies the code needs, and it is raised only when the code starts using something newer. It is not tested in CI, so as not to block apps on older Flutter. 3.8.0 is needed for null-aware map elements (`'key': ?value`), and by the generator's dependencies: it was raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
 - parse-server 9.10.5 is the latest release of the current major and 8.6.112 of the previous one. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are the newest versions that parse-server's own CI tests on both majors (9.x also tests Mongo 8.3; 8.x does not). PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.
 - Fixtures are normalized so a rerun writes identical files: object ids, session tokens and file names become placeholders numbered by first appearance (`obj0000001`, `r:session0001`, `file0001_hello.txt`), every `createdAt`/`updatedAt` becomes `2000-01-01T00:00:00.000Z`, the server URL becomes `http://parse.test/parse`, and object keys are sorted. A fixture that differs between backends after this is kept as `<name>.mongo.json` and `<name>.postgres.json`.

@@ -76,6 +76,12 @@ final class ParseClient {
   Future<Json> callFunction(String name, Json params) =>
       request(this, 'POST', '/functions/$name', body: params);
 
+  /// The `params` of `GET /config`. Params the server marks
+  /// `masterKeyOnly` are left out of the response (`getGlobalConfig` in
+  /// GlobalConfigRouter.js).
+  Future<Json> config() async =>
+      (await request(this, 'GET', '/config')).require<Json>('params');
+
   /// Sends the stored session as usual: the server rejects anonymous
   /// uploads with 130 unless `fileUpload.enableForPublic` is set.
   ///

@@ -20,6 +20,7 @@ List<Signal> fixtures(String name) => [
     tags: const ['x'],
     at: d1,
     place: GeoPoint(10, 10),
+    links: const [Pointer('s1')],
   ),
   Signal(
     name: name,
@@ -28,6 +29,7 @@ List<Signal> fixtures(String name) => [
     tags: const ['x', 'y'],
     at: d2,
     place: GeoPoint(20, 20),
+    links: const [Pointer('s2'), Pointer('s3')],
   ),
   Signal(name: name),
   Signal(
@@ -45,6 +47,7 @@ List<Signal> fixtures(String name) => [
     tags: const [],
     at: d1,
     place: GeoPoint(15, 15),
+    links: const [],
   ),
   Signal(name: name, points: 30),
 ];
@@ -69,6 +72,11 @@ void main() {
       ('matches i', (f) => f.label.matches('^a', caseInsensitive: true)),
       ('contains', (f) => f.tags.contains('x')),
       ('containsAll', (f) => f.tags.containsAll(['x', 'y'])),
+      ('containsAny', (f) => f.tags.containsAny(['y', 'z'])),
+      (
+        'containsAny on pointers',
+        (f) => f.links.containsAny(const [Pointer('s1'), Pointer('s3')]),
+      ),
       ('date gt', (f) => f.at.gt(d1)),
       ('date lt', (f) => f.at.lt(d3)),
       ('date eq', (f) => f.at.eq(d1)),

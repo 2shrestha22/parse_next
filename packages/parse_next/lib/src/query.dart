@@ -152,6 +152,17 @@ final class ListField<T, E> extends ExistsField<T> {
   /// An empty list matches nothing.
   Cond<T> containsAll(List<E> values) => _cond({r'$all': _all(values)});
 
+  /// Matches a list holding at least one of [values]. Throws
+  /// [ArgumentError] for an empty list: Postgres turns `$in: []` into
+  /// `IS NULL`, which matches an absent list, while Mongo matches nothing
+  /// (`buildWhereClause` in PostgresStorageAdapter.js).
+  Cond<T> containsAny(List<E> values) {
+    if (values.isEmpty) {
+      throw ArgumentError.value(values, 'values', 'must not be empty');
+    }
+    return _cond({r'$in': _all(values)});
+  }
+
   List<Object?> _all(List<E> values) => [for (final v in values) _encode(v)];
 }
 
@@ -300,6 +311,14 @@ final class Query<T, F, O> {
   /// explicitly. [stream] fetches every match.
   Future<List<Doc<T>>> find() => _find(_params(limit: _limit ?? _pageSize));
 
+  /// Like [find], but a row that does not match the model is an [Err] with
+  /// a [DecodeError] whose [DecodeError.id] names the row, in place of
+  /// failing the whole page. A failed request still throws.
+  Future<List<Result<Doc<T>>>> tryFind() async => [
+    for (final r in await _rows(_params(limit: _limit ?? _pageSize)))
+      _tryDecode(r),
+  ];
+
   Future<Doc<T>?> first() async => (await _find(_params(limit: 1))).firstOrNull;
 
   /// Counts every match; `include`, `orderBy`, `limit` and `skip` are not
@@ -415,16 +434,31 @@ final class Query<T, F, O> {
     if (_skip case final s?) 'skip': '$s',
   };
 
-  Future<List<Doc<T>>> _find(Map<String, String> params) async {
-    final response = await request(
-      _client,
-      'GET',
-      _collection._path,
-      query: params,
-    );
-    return [
-      for (final r in response.requireList<Json>('results'))
-        Doc.decode(r, _collection._schema),
-    ];
+  Future<List<Doc<T>>> _find(Map<String, String> params) async => [
+    for (final r in await _rows(params)) Doc.decode(r, _collection._schema),
+  ];
+
+  Future<List<Json>> _rows(Map<String, String> params) async => (await request(
+    _client,
+    'GET',
+    _collection._path,
+    query: params,
+  )).requireList<Json>('results');
+
+  Result<Doc<T>> _tryDecode(Json row) {
+    try {
+      return Ok(Doc.decode(row, _collection._schema));
+    } on DecodeError catch (e) {
+      return Err(
+        DecodeError(
+          e.key,
+          e.message,
+          id: switch (row['objectId']) {
+            final String id => id,
+            _ => null,
+          },
+        ),
+      );
+    }
   }
 }

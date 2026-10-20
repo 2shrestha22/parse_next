@@ -141,12 +141,12 @@ final class BatchOp<R> {
   final String _path;
   final Json? _body;
   final R Function(Json success) _decode;
-  BatchResult<R>? _result;
+  Result<R>? _result;
 
   /// An [Err] holds the exception the same call outside a batch would
   /// throw, with the HTTP status the server gives that code on its own
   /// (`handleParseErrors` in middlewares.js), or a [DecodeError].
-  BatchResult<R> get result =>
+  Result<R> get result =>
       _result ?? (throw StateError('The batch has not been sent.'));
 
   void _complete(String key, Object? item) {
@@ -157,7 +157,7 @@ final class BatchOp<R> {
     };
   }
 
-  BatchResult<R> _ok(String key, Map<String, Object?> success) {
+  Result<R> _ok(String key, Map<String, Object?> success) {
     try {
       return Ok(_decode(Json(success)));
     } on DecodeError catch (e) {
@@ -176,20 +176,4 @@ final class BatchOp<R> {
     };
     return _exception(code, message, _statusOf(code), _path);
   }
-}
-
-sealed class BatchResult<R> {
-  const BatchResult();
-}
-
-final class Ok<R> extends BatchResult<R> {
-  const Ok(this.value);
-
-  final R value;
-}
-
-final class Err<R> extends BatchResult<R> {
-  const Err(this.error);
-
-  final ParseException error;
 }

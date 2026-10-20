@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": {
+      "authData": {
+        "unknown": {
+          "id": "x"
+        }
+      }
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "code": 252,
+    "error": "This authentication method is unsupported."
+  },
+  "status": 400
+}

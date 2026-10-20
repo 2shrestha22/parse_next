@@ -66,9 +66,9 @@ final class Auth<U> {
   final ParseClient _client;
   final ParseSchema<U, Object?, Object?> _schema;
 
-  /// Emits the user on [signUp], [logIn] and [become], and null on [logOut]
-  /// and when a request finds the stored session invalid. [me] does not
-  /// emit.
+  /// Emits the user on [signUp], [logIn], [logInWith] and [become], and null
+  /// on [logOut] and when a request finds the stored session invalid. [me]
+  /// does not emit.
   Stream<Doc<U>?> get changes => _client._changes.stream.map(_doc);
 
   /// The stored user, without a request; null when logged out.
@@ -99,6 +99,42 @@ final class Auth<U> {
       stored: false,
     ),
   );
+
+  /// Logs in the user linked to [authData] for [provider], or signs up a new
+  /// one. The server validates [authData] with that provider's auth adapter.
+  ///
+  /// Never sends the stored token: with a session, the server links
+  /// [authData] to that user instead of logging in (`handleAuthData` in
+  /// RestWrite.js). Throws [InvalidCredentials] when the adapter rejects
+  /// [authData] with 101, as parse-server's built-in adapters do, and
+  /// [OtherParseError] 252 for a provider the server does not have.
+  ///
+  /// For a new user the returned [Doc] has no [Doc.acl], as from [signUp].
+  Future<Doc<U>> logInWith(
+    String provider,
+    Map<String, Object?> authData,
+  ) async {
+    final Json response;
+    try {
+      response = await request(
+        _client,
+        'POST',
+        '/users',
+        body: Json({
+          'authData': {provider: authData},
+        }),
+        stored: false,
+      );
+    } on ObjectNotFound catch (e) {
+      throw InvalidCredentials(e.message, status: e.status);
+    }
+    // A new user's 201 response, like sign-up's, has no updatedAt.
+    return _start(
+      response.containsKey('updatedAt')
+          ? response
+          : _created(Json({}), response),
+    );
+  }
 
   /// Adopts a session created elsewhere, such as by cloud code.
   Future<Doc<U>> become(String sessionToken) async => _start(

@@ -195,6 +195,15 @@ void main() {
         },
       ),
       (
+        'containsAny',
+        (f) => f.tags.containsAny(['a', 'b']),
+        {
+          'tags': {
+            r'$in': ['a', 'b'],
+          },
+        },
+      ),
+      (
         'a pointer list contains',
         (f) => f.coauthors.contains(const Pointer('a1')),
         {
@@ -459,6 +468,29 @@ void main() {
     expect(docs.first.data.coauthors!.single.loaded, isNull);
   });
 
+  test('tryFind turns only the row that does not decode into Err', () async {
+    final s = Server(
+      (_) => results([
+        row('p1'),
+        {...row('p2'), 'title': 2},
+        row('p3'),
+      ]),
+    );
+    final got = await s.posts.query().tryFind();
+    expect(s.params, {'limit': '100'});
+    expect(got, [
+      isA<Ok<Doc<Post>>>().having((r) => r.value.id, 'id', 'p1'),
+      isA<Err<Doc<Post>>>().having(
+        (r) => r.error,
+        'error',
+        isA<DecodeError>()
+            .having((e) => e.id, 'id', 'p2')
+            .having((e) => e.key, 'key', 'title'),
+      ),
+      isA<Ok<Doc<Post>>>().having((r) => r.value.id, 'id', 'p3'),
+    ]);
+  });
+
   test('first sends limit 1 and returns null for no rows', () async {
     final s = Server();
     expect(await s.posts.query().skip(2).first(), isNull);
@@ -612,6 +644,13 @@ void main() {
   group('rejects before any request', () {
     test('oneOf with no values', () {
       expect(() => const PostFields().title.oneOf([]), throwsArgumentError);
+    });
+
+    test('containsAny with no values', () {
+      expect(
+        () => const PostFields().tags.containsAny([]),
+        throwsArgumentError,
+      );
     });
 
     test(r'startsWith with \E', () {

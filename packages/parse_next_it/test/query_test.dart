@@ -234,6 +234,11 @@ final cases = <Case>[
     (d, s) => d.data.tags.contains('a') && d.data.tags.contains('b'),
   ),
   c(
+    'tags containsAny',
+    (f, s) => f.tags.containsAny(['a', 'd']),
+    (d, s) => d.data.tags.contains('a') || d.data.tags.contains('d'),
+  ),
+  c(
     'owner isId',
     (f, s) => f.owner.isId(s.person(0).id),
     (d, s) => d.data.owner.id == s.person(0).id,
@@ -261,6 +266,13 @@ final cases = <Case>[
     (d, s) =>
         d.data.helpers.any((p) => p.id == s.person(1).id) &&
         d.data.helpers.any((p) => p.id == s.person(2).id),
+  ),
+  c(
+    'helpers containsAny',
+    (f, s) => f.helpers.containsAny([s.person(1), s.person(2)]),
+    (d, s) => d.data.helpers.any(
+      (p) => p.id == s.person(1).id || p.id == s.person(2).id,
+    ),
   ),
   c(
     'spot near',

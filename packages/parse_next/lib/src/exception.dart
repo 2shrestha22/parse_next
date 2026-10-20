@@ -6,15 +6,20 @@ sealed class ParseException implements Exception {
 
 /// A server value did not match the shape the model expects.
 final class DecodeError extends ParseException {
-  const DecodeError(this.key, this.message);
+  const DecodeError(this.key, this.message, {this.id});
 
   /// Path to the offending value, such as `author.name` or `tags[2]`.
   final String key;
   @override
   final String message;
 
+  /// The `objectId` of the row that failed, from `Query.tryFind`; null
+  /// elsewhere and when the row has no string `objectId`.
+  final String? id;
+
   @override
-  String toString() => 'DecodeError: $key: $message';
+  String toString() =>
+      'DecodeError: ${id == null ? '' : '$id: '}$key: $message';
 }
 
 /// The object does not exist, or the ACL hides it from this caller: the
@@ -71,8 +76,9 @@ final class InvalidSession extends ParseException {
   String toString() => 'InvalidSession ($code, HTTP $status): $message';
 }
 
-/// `/login` found no user with that username and password. The server
-/// answers with 101, which on every other route is [ObjectNotFound].
+/// `/login` found no user with that username and password, or the provider
+/// rejected the `authData` given to `Auth.logInWith`. The server answers
+/// both with 101, which elsewhere is [ObjectNotFound].
 final class InvalidCredentials extends ParseException {
   const InvalidCredentials(this.message, {required this.status});
 
@@ -160,4 +166,22 @@ final class OtherParseError extends ParseException {
   String toString() =>
       'OtherParseError (${code ?? 'no code'}, HTTP $status): '
       '$message';
+}
+
+/// One outcome of a call that succeeds or fails per item: a batch item or a
+/// `Query.tryFind` row.
+sealed class Result<R> {
+  const Result();
+}
+
+final class Ok<R> extends Result<R> {
+  const Ok(this.value);
+
+  final R value;
+}
+
+final class Err<R> extends Result<R> {
+  const Err(this.error);
+
+  final ParseException error;
 }

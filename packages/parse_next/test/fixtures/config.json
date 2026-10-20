@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/config"
+  },
+  "response": {
+    "masterKeyOnly": {
+      "flag": false,
+      "limit": false,
+      "name": false,
+      "nested": false
+    },
+    "params": {
+      "flag": true,
+      "limit": 2.5,
+      "name": "x",
+      "nested": {
+        "list": [
+          1,
+          "two"
+        ]
+      }
+    }
+  },
+  "status": 200
+}

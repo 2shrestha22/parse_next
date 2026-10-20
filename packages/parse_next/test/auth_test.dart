@@ -133,6 +133,21 @@ void main() {
       );
     });
 
+    test('logInWith, without the stored token', () async {
+      final s = Server((_) => userWith('r:n'), store: Store(session('r:old')));
+      await s.auth.logInWith('anonymous', {'id': 'a1'});
+      expectOnly(
+        s,
+        'POST',
+        '/users',
+        body: {
+          'authData': {
+            'anonymous': {'id': 'a1'},
+          },
+        },
+      );
+    });
+
     test('become, with the given token', () async {
       final s = Server(
         (_) => userWith('r:new'),
@@ -323,6 +338,14 @@ void main() {
       );
     });
 
+    test('from logInWith is InvalidCredentials', () async {
+      final s = Server((_) => error(101, 404));
+      await expectLater(
+        s.auth.logInWith('google', {'id': 'g1', 'id_token': 'bad'}),
+        throwsA(isA<InvalidCredentials>().having((e) => e.status, 's', 404)),
+      );
+    });
+
     test('from any other route is ObjectNotFound', () async {
       final s = Server((_) => error(101, 404), store: Store(session('r:t')));
       await expectLater(s.auth.me(), throwsA(isA<ObjectNotFound>()));
@@ -409,28 +432,34 @@ void main() {
     });
   });
 
-  test('changes emits on signUp, logIn, become and logOut', () async {
-    final s = Server(
-      (r) => switch (r.url.path) {
-        '/parse/users' => ok({
-          'objectId': 'u1',
-          'createdAt': at,
-          'sessionToken': 'r:1',
-        }),
-        '/parse/logout' => ok(),
-        _ => userWith('r:2'),
-      },
-    );
-    final events = <String?>[];
-    s.auth.changes.listen((d) => events.add(d?.data.username));
-    await s.auth.signUp(
-      password: 'pw',
-      user: const Member(username: 'ann'),
-    );
-    await s.auth.logOut();
-    await s.auth.logIn('ann', 'pw');
-    await s.auth.become('r:2');
-    await pumpEventQueue();
-    expect(events, ['ann', null, 'ann', 'ann']);
-  });
+  test(
+    'changes emits on signUp, logIn, logInWith, become and logOut',
+    () async {
+      final s = Server(
+        (r) => switch (r.url.path) {
+          '/parse/users' => ok({
+            'objectId': 'u1',
+            'createdAt': at,
+            'username': 'ann',
+            'sessionToken': 'r:1',
+          }),
+          '/parse/logout' => ok(),
+          _ => userWith('r:2'),
+        },
+      );
+      final events = <String?>[];
+      s.auth.changes.listen((d) => events.add(d?.data.username));
+      await s.auth.signUp(
+        password: 'pw',
+        user: const Member(username: 'ann'),
+      );
+      await s.auth.logOut();
+      await s.auth.logIn('ann', 'pw');
+      await s.auth.become('r:2');
+      await s.auth.logInWith('anonymous', {'id': 'a1'});
+      await pumpEventQueue();
+      expect(events, ['ann', null, 'ann', 'ann', 'ann']);
+      expect(jsonDecode(s.store.value!), containsPair('sessionToken', 'r:1'));
+    },
+  );
 }

@@ -15,6 +15,7 @@ Future<void> resetSignals(Backend backend) => backend.resetClass('Signal', {
   'tags': {'type': 'Array'},
   'at': {'type': 'Date'},
   'place': {'type': 'GeoPoint'},
+  'links': {'type': 'Array'},
 });
 
 String unique(String name) => '$name-${DateTime.now().microsecondsSinceEpoch}';

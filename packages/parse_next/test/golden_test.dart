@@ -13,6 +13,7 @@ import 'models.dart';
 const covered = {
   'batch_partial_failure.json',
   'batch_transaction_failure.json',
+  'config.json',
   'create_all_fields.json',
   'create_null_fields.json',
   'error_101_acl_denied.json',
@@ -24,6 +25,7 @@ const covered = {
   'error_202_username_taken.json',
   'error_203_email_taken.json',
   'error_209_invalid_session.json',
+  'error_252_unsupported_auth.json',
   'error_unauthorized.json',
   'file_upload.json',
   'function_call.json',
@@ -45,6 +47,8 @@ const covered = {
   'query_include.json',
   'query_related_to.json',
   'user_log_in.json',
+  'user_log_in_with_existing.json',
+  'user_log_in_with_new.json',
   'user_me.json',
   'user_sign_up.json',
 };
@@ -367,6 +371,17 @@ void main() {
             .having((e) => e.message, 'message', 'Invalid session token'),
       ),
       (
+        'error_252_unsupported_auth.json',
+        isA<OtherParseError>()
+            .having((e) => e.code, 'code', 252)
+            .having((e) => e.status, 'status', 400)
+            .having(
+              (e) => e.message,
+              'message',
+              'This authentication method is unsupported.',
+            ),
+      ),
+      (
         'error_unauthorized.json',
         isA<Unauthorized>()
             .having((e) => e.status, 'status', 403)
@@ -429,6 +444,27 @@ void main() {
     expect(doc.updatedAt, epoch);
     expect(doc.acl, const Acl().withUser('obj0000001', write: true));
     expect(doc.data.username, 'alice');
+  });
+
+  test('config.json: the params, without the masterKeyOnly one', () async {
+    final f = fixture('config.json');
+    final client = ParseClient(
+      server: Uri.parse('http://parse.test/parse'),
+      appId: 'parse-next-it',
+      httpClient: MockClient(
+        (_) async =>
+            http.Response(jsonEncode(f['response']), f['status']! as int),
+      ),
+    );
+    final config = await client.config();
+    expect(config.require<bool>('flag'), isTrue);
+    expect(config.require<double>('limit'), 2.5);
+    expect(config.require<String>('name'), 'x');
+    expect(config.require<Json>('nested').requireList<Object>('list'), [
+      1,
+      'two',
+    ]);
+    expect(config, isNot(contains('secret')));
   });
 
   group('batch', () {
@@ -562,6 +598,28 @@ void main() {
       expect(doc.id, 'obj0000007');
       expect(doc.data.username, 'carol');
       expect(doc.acl, const Acl().withUser('obj0000007', write: true));
+      expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
+    });
+
+    test('user_log_in_with_new.json: a 201 without updatedAt or ACL', () async {
+      final (doc, _) = await replay(
+        'user_log_in_with_new.json',
+        (a) => a.logInWith('anonymous', {'id': 'capture-anonymous'}),
+      );
+      expect(doc.id, 'obj0000009');
+      expect(doc.updatedAt, doc.createdAt);
+      expect(doc.acl, isNull);
+      expect(doc.data.username, 'user0001');
+      expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
+    });
+
+    test('user_log_in_with_existing.json', () async {
+      final (doc, _) = await replay(
+        'user_log_in_with_existing.json',
+        (a) => a.logInWith('anonymous', {'id': 'capture-anonymous'}),
+      );
+      expect(doc.id, 'obj0000009');
+      expect(doc.acl, const Acl().withUser('obj0000009', write: true));
       expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
     });
 

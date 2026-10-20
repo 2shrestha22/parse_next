@@ -1,0 +1,21 @@
+{
+  "request": {
+    "body": {
+      "authData": {
+        "anonymous": {
+          "id": "capture-anonymous"
+        }
+      }
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "authDataResponse": {},
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "objectId": "obj0000009",
+    "sessionToken": "r:session0005",
+    "username": "user0001"
+  },
+  "status": 201
+}
