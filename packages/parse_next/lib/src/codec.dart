@@ -257,7 +257,8 @@ final class ParseFile {
   final String name;
 
   /// Not sent on encode and ignored by `==`: the server stores only the name
-  /// and builds the URL from the request host.
+  /// and builds the URL from its `publicServerURL`, or from the request host
+  /// when that is unset.
   final String? url;
 
   Map<String, Object?> toJson() => {'__type': 'File', 'name': name};

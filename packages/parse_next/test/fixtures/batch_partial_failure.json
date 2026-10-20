@@ -1,0 +1,58 @@
+{
+  "request": {
+    "body": {
+      "requests": [
+        {
+          "body": {
+            "name": "Cy"
+          },
+          "method": "POST",
+          "path": "/parse/classes/Author"
+        },
+        {
+          "body": {
+            "count": 1
+          },
+          "method": "PUT",
+          "path": "/parse/classes/Post/doesNotExist"
+        },
+        {
+          "body": {
+            "name": "Ann"
+          },
+          "method": "PUT",
+          "path": "/parse/classes/Author/obj0000003"
+        },
+        {
+          "method": "DELETE",
+          "path": "/parse/classes/Author/obj0000004"
+        }
+      ]
+    },
+    "method": "POST",
+    "path": "/batch"
+  },
+  "response": [
+    {
+      "success": {
+        "createdAt": "2000-01-01T00:00:00.000Z",
+        "objectId": "obj0000008"
+      }
+    },
+    {
+      "error": {
+        "code": 101,
+        "error": "Object not found."
+      }
+    },
+    {
+      "success": {
+        "updatedAt": "2000-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "success": {}
+    }
+  ],
+  "status": 200
+}

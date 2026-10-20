@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:http/http.dart' as http;
 import 'package:parse_next/parse_next.dart';
 import 'package:parse_next_it/models/note.dart';
 import 'package:parse_next_it/models/post.dart';
@@ -52,7 +53,10 @@ Post full(Pointer<User> a, Pointer<User> b) => Post(
   data: Uint8List.fromList([9]),
 );
 
-Post minimal(Pointer<User> a) => Post(
+Post minimal(
+  Pointer<User> a, {
+  ParseFile cover = const ParseFile(name: 'c.png'),
+}) => Post(
   title: 't',
   likes: 0,
   rating: 1,
@@ -64,7 +68,7 @@ Post minimal(Pointer<User> a) => Post(
   meta: const {},
   author: a,
   coauthors: const [],
-  cover: const ParseFile(name: 'c.png'),
+  cover: cover,
   location: GeoPoint(-10, -20),
   area: Polygon([GeoPoint(5, 5), GeoPoint(5, 6), GeoPoint(6, 6)]),
   thumbnail: Uint8List.fromList([7]),
@@ -487,6 +491,217 @@ void main() {
         await expectLater(
           unreachable.collection(postSchema).get('x'),
           throwsA(isA<NetworkError>()),
+        );
+      });
+    });
+
+    group('batch', () {
+      late Collection<Note, NoteFields, NoteOps> notes;
+      setUp(() => notes = client.collection(const $NoteSchema()));
+
+      Future<Map<String, Object?>> stored(String id) => backend.rest(
+        'GET',
+        '/classes/Note/$id',
+        master: true,
+        allowError: true,
+      );
+
+      Future<int> countText(String text) async {
+        final r = await backend.rest(
+          'GET',
+          '/classes/Note',
+          master: true,
+          query: {'where': '{"text":"$text"}', 'count': '1', 'limit': '0'},
+        );
+        return r['count']! as int;
+      }
+
+      Future<
+        ({
+          Batch batch,
+          List<String> ids,
+          BatchOp<Doc<Note>> created,
+          BatchOp<DateTime> updated,
+          BatchOp<DateTime> missing,
+          BatchOp<DateTime> replaced,
+          BatchOp<void> deleted,
+        })
+      >
+      mixed(ParseClient via, String text) async {
+        final ids = [
+          for (final t in ['a', 'b', 'd'])
+            (await notes.create(Note(text: t, place: GeoPoint(1, 2)))).id,
+        ];
+        final batchNotes = via.collection(const $NoteSchema());
+        final batch = via.batch();
+        return (
+          batch: batch,
+          ids: ids,
+          created: batch.create(batchNotes, Note(text: text, draft: true)),
+          updated: batch.update(
+            batchNotes,
+            ids[0],
+            (o) => [o.place.set(GeoPoint(3, 4))],
+          ),
+          missing: batch.update(
+            batchNotes,
+            'doesNotExist',
+            (o) => [o.place.set(GeoPoint(5, 6))],
+          ),
+          replaced: batch.replace(batchNotes, ids[1], const Note(text: 'rep')),
+          deleted: batch.delete(batchNotes, ids[2]),
+        );
+      }
+
+      test('one failing item is the only Err; the others apply', () async {
+        final m = await mixed(client, 'new');
+        await m.batch.send();
+
+        expect(
+          (m.missing.result as Err<DateTime>).error,
+          isA<ObjectNotFound>().having((e) => e.status, 'status', 404),
+        );
+        final doc = (m.created.result as Ok<Doc<Note>>).value;
+        // The beforeSave trigger in cloud/main.js uppercases text and unsets
+        // draft; the batch response carries both changes.
+        expect(doc.data.text, 'NEW');
+        expect(doc.data.draft, isNull);
+        expect((await notes.get(doc.id)).data.text, 'NEW');
+        expect(m.updated.result, isA<Ok<DateTime>>());
+        expect(m.replaced.result, isA<Ok<DateTime>>());
+        expect(m.deleted.result, isA<Ok<void>>());
+
+        expect((await notes.get(m.ids[0])).data.place, GeoPoint(3, 4));
+        final replaced = await stored(m.ids[1]);
+        expect(replaced['text'], 'REP');
+        expect(replaced, isNot(contains('place')));
+        expect((await stored(m.ids[2]))['code'], 101);
+      });
+
+      test('in a transaction one failing item applies none', () async {
+        final m = await mixed(client, 'tx-new');
+        await expectLater(
+          m.batch.send(transaction: true),
+          throwsA(
+            isA<OtherParseError>()
+                .having((e) => e.code, 'code', 1)
+                .having((e) => e.status, 'status', 500),
+          ),
+        );
+        expect(() => m.created.result, throwsStateError);
+        // Right after the failure, on the same client: this call would get the
+        // socket the server destroyed if the batch had kept its connection.
+        expect((await notes.get(m.ids[0])).data.place, GeoPoint(1, 2));
+        expect(await countText('TX-NEW'), 0);
+        final kept = await notes.get(m.ids[1]);
+        expect(kept.data.text, 'B');
+        expect(kept.data.place, GeoPoint(1, 2));
+        expect((await notes.get(m.ids[2])).data.text, 'D');
+      });
+
+      test('a transaction without a failing item applies all', () async {
+        final id = (await notes.create(const Note(text: 'a'))).id;
+        final b = client.batch();
+        final created = b.create(notes, const Note(text: 'tx-ok'));
+        final updated = b.update(notes, id, (o) => [o.text.set('tx-upd')]);
+        await b.send(transaction: true);
+        expect(created.result, isA<Ok<Doc<Note>>>());
+        expect(updated.result, isA<Ok<DateTime>>());
+        expect(await countText('TX-OK'), 1);
+        expect((await notes.get(id)).data.text, 'TX-UPD');
+      });
+
+      test(
+        'the server sets no default item limit: 1,000 items apply',
+        () async {
+          final b = client.batch();
+          final ops = [
+            for (var i = 0; i < 1000; i++)
+              b.create(notes, Note(text: 'bulk-$i')),
+          ];
+          await b.send();
+          expect(ops.where((op) => op.result is! Ok), isEmpty);
+          expect(await countText('BULK-999'), 1);
+        },
+      );
+    });
+
+    group('files', () {
+      late ParseClient asAlice;
+      final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0, 1, 255]);
+
+      setUpAll(() async {
+        asAlice = backend.client();
+        await asAlice.auth(const $UserSchema()).become(aliceToken);
+      });
+
+      tearDownAll(() => asAlice.close());
+
+      test('the download has the uploaded bytes and content type', () async {
+        final file = await asAlice.uploadFile(
+          png,
+          name: 'pixel.png',
+          contentType: 'image/png',
+        );
+        expect(file.name, matches(RegExp(r'^[0-9a-f]{32}_pixel\.png$')));
+        final r = await http.get(Uri.parse(file.url!));
+        expect(r.statusCode, 200);
+        expect(r.bodyBytes, png);
+        expect(r.headers['content-type'], 'image/png');
+      });
+
+      test('a name without extension gets the content type\'s', () async {
+        final file = await asAlice.uploadFile(
+          png,
+          name: 'pixel',
+          contentType: 'image/png',
+        );
+        expect(file.name, endsWith('_pixel.png'));
+        final r = await http.get(Uri.parse(file.url!));
+        expect(r.headers['content-type'], 'image/png');
+      });
+
+      test('an upload in a File field round-trips through get', () async {
+        final file = await asAlice.uploadFile(
+          png,
+          name: 'cover.png',
+          contentType: 'image/png',
+        );
+        final id = (await posts.create(minimal(alice, cover: file))).id;
+        final got = (await posts.get(id)).data.cover;
+        expect(got, file);
+        expect(got.url, file.url);
+      });
+
+      test('an anonymous upload is 130', () async {
+        await expectLater(
+          client.uploadFile(png, name: 'a.png', contentType: 'image/png'),
+          throwsA(
+            isA<OtherParseError>()
+                .having((e) => e.code, 'code', 130)
+                .having((e) => e.status, 'status', 400)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'File upload by public is disabled.',
+                ),
+          ),
+        );
+      });
+
+      test('an invalid name is 122', () async {
+        await expectLater(
+          asAlice.uploadFile(png, name: 'bad?.png', contentType: 'image/png'),
+          throwsA(
+            isA<OtherParseError>()
+                .having((e) => e.code, 'code', 122)
+                .having((e) => e.status, 'status', 400)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Filename contains invalid characters.',
+                ),
+          ),
         );
       });
     });

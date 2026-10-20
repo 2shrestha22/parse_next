@@ -82,7 +82,7 @@ Later phases must follow these:
 | A create returns only `objectId` and `createdAt`, not `updatedAt`; a GET straight after has both. | Phase 3 |
 | The file upload response is `{name, url}` without `__type`, unlike a File field. | Phase 8 |
 | An uncaught internal error is 500 `{"code":1,"message":…}`: the text is under `message`, not `error` (`handleParseErrors` in `middlewares.js`). Any other 403 without a `code`, such as `unauthorized: master key is required`, is also sent with `res.end` and no `Content-Type`; every 403 without a code maps to `Unauthorized`. | Phase 2 |
-| After that uncaught 500, `handleParseErrors` calls `next(err)` and Express's `finalhandler` destroys the socket. The next request on the same pooled keep-alive connection fails with `Connection closed before full header was received` (a `NetworkError`), and that request never reaches the server. Only this uncaught-error path does it; the `"An internal server error occurred"` 500 keeps the socket. Decision: document it on `NetworkError`, no transport change. Turning off keep-alive would cost a new TCP/TLS connection per request to work around a server bug. | Phase 2 |
+| After that uncaught 500, `handleParseErrors` calls `next(err)` and Express's `finalhandler` destroys the socket. The next request on the same pooled keep-alive connection fails with `Connection closed before full header was received` (a `NetworkError`), and that request never reaches the server. Only this uncaught-error path does it; the `"An internal server error occurred"` 500 keeps the socket. Decision: document it on `NetworkError` and keep keep-alive, since turning it off would cost a new TCP/TLS connection per request. The one expected path to this 500, a failed transactional batch, is sent with `Connection: close`, so the next call is unaffected. | Phase 2 |
 | A date constraint with a plain ISO string matches nothing on Mongo but is cast to a date and matches on Postgres. Queries always send `{"__type":"Date"}`. | Phase 4 |
 | `$nin` never matches an absent field on Postgres (`NOT IN`), but does on Mongo. `$in: []` matches absent fields on Postgres (`IS NULL`) and nothing on Mongo, so `oneOf([])` throws `ArgumentError` (`buildWhereClause` in `PostgresStorageAdapter.js`). | Phase 4 |
 | Ascending sorts put absent values first on Mongo and last on Postgres. Strings compare and sort by the database collation: binary on Mongo, `en_US.utf8` on Postgres (`"Banana" > "b"` there). The oracle uses lowercase a–f names, where both orders agree. | Phase 4 |
@@ -100,6 +100,10 @@ Later phases must follow these:
 | Returning a File param from cloud code kills the server process: the SDK sends a File without `url`, and `Parse._encode` throws `Tried to encode an unsaved file.` inside `success` in `FunctionsRouter.js`, where nothing catches it. The fixture functions return `file.toJSON()` instead. | Phase 7 |
 | A thrown `Parse.Error` keeps its code (`resolveError` in `triggers.js`), with the usual HTTP status (101 is 404, 1 is 500, the rest 400). A cloud `throw new Parse.Error(209, …)` therefore clears the caller's stored session. An unknown function is 141 `Invalid function: "name"`. | Phase 7 |
 | Returning `request.user` includes the caller's `sessionToken` in the result; decoding into a model drops it. | Phase 7 |
+| A batch response is a top-level JSON array, one `{"success":…}` or `{"error":{code,error}}` per item. A create item's `success` carries `beforeSave` changes like a plain create. An empty `requests` list is 200 `[]`. | Phase 8 |
+| A transactional batch with a failing item is 500 `{"code":1,"message":"Internal server error."}`; the item errors appear only in the server log (`handleBatch` in `batch.js`). On a standalone Mongo every transactional batch fails this way, with item error 20. | Phase 8 |
+| An upload's stored name keeps a recognized extension and the type follows it, whatever `Content-Type` was sent; a name without an extension gets the sent type's extension (`createFile` in `FilesController.js`), and no `Content-Type` counts as `text/plain` (the `Parse.File` base64 default). Downloads set `Content-Type` from the name's extension (`mime.getType` in `getHandler` in `FilesRouter.js`), and an unknown extension is served as `Content-Type: false`. | Phase 8 |
+| Upload errors are HTTP 400: an anonymous upload is 130 `File upload by public is disabled.`, an empty body 130 `Invalid file upload.`, a name outside `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*` or over 128 characters 122 (`validateFilename` in `FilesAdapter.js`). | Phase 8 |
 
 ## Repo layout
 
@@ -296,12 +300,18 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 ## Phase 8: Batch and files
 
 **Build**
-- `batch` returning a `List<BatchResult>` (sealed: `Ok` or `Err`)
+- `client.batch()` with typed handles: each added op returns a `BatchOp<R>` whose `result` is a sealed `BatchResult<R>` (`Ok` or `Err`) after one `send()`
 - file upload returning a `ParseFile`
 
 **Rules**
 - Check parse-server's batch size limit and transaction behavior at the start of the phase and record them as constraints here.
 - Batch is **not** transactional unless the call says so explicitly.
+- Size limit: none by default. `requestComplexity.batchRequestLimit` defaults to `-1` (`RequestComplexityOptions` in `Options/Definitions.js`); a server that sets it rejects a longer batch as a whole with 107 unless the master key is used (`handleBatch` in `batch.js`). The SDK adds no client-side check. The JSON body is capped by `maxUploadSize`, 20 MB by default (`express.json` in `ParseServer.ts`).
+- Items run concurrently, not in order (`Promise.all` over the requests in `handleBatch`); results come back in request order. Each item's `path` must include the mount path (`/parse/classes/Post`), or the batch fails with 107 `cannot route batch path`.
+- Without `transaction`, each item applies or fails on its own, and the response is 200 with `{"success":…}` or `{"error":{code,error}}` per item. An item error has no HTTP status; the SDK gives it the status the server uses for that code on its own (1 is 500, 101 is 404, the rest 400).
+- With `"transaction": true`, one failing item aborts the transaction and the server rejects with the item results as a plain object, not a `Parse.Error`, so the response is 500 `{"code":1,"message":"Internal server error."}` with no item results, and the socket is closed as for any uncaught error (see the table). `send(transaction: true)` throws `OtherParseError` code 1. Transient transaction errors (251) are retried up to 5 times by the server.
+- Mongo transactions need a replica set: on a standalone server every transactional item fails with 20 `Transaction numbers are only allowed on a replica set member or mongos`, so every transactional batch is a 500. Compose runs Mongo as the single-node replica set `rs0`, initiated by its healthcheck. Postgres needs nothing (`createTransactionalSession` in `PostgresStorageAdapter.js`).
+- `uploadFile` requires `contentType`: without a `Content-Type` the server treats the upload as `text/plain` and appends `.txt` to a name without an extension. The download's `Content-Type` comes from the stored name's extension, not from the uploaded type, so `contentType` is preserved only where it matches the extension (see the table).
 
 **Verify**
 - A batch with one failing item returns exactly one `Err` at the right index, while the others succeed.
@@ -353,7 +363,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 - Both Mongo and Postgres are required.
 - Web is a supported platform.
 - The master key stays out of v1.
-- Not settled yet: parse-server's batch limit (Phase 8).
+- The batch limit is settled: there is no default limit (see the Phase 8 Rules).
 - Dart SDK lower bound is 3.8.0, raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
 - parse-server 9.10.5 is the latest release of the current major and 8.6.112 of the previous one. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are the newest versions that parse-server's own CI tests on both majors (9.x also tests Mongo 8.3; 8.x does not). PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.
 - Fixtures are normalized so a rerun writes identical files: object ids, session tokens and file names become placeholders numbered by first appearance (`obj0000001`, `r:session0001`, `file0001_hello.txt`), every `createdAt`/`updatedAt` becomes `2000-01-01T00:00:00.000Z`, the server URL becomes `http://parse.test/parse`, and object keys are sorted. A fixture that differs between backends after this is kept as `<name>.mongo.json` and `<name>.postgres.json`.

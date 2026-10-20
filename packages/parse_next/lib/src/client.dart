@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -7,6 +8,7 @@ import 'codec.dart';
 import 'exception.dart';
 
 part 'auth.dart';
+part 'batch.dart';
 part 'collection.dart';
 part 'query.dart';
 
@@ -63,6 +65,46 @@ final class ParseClient {
   Future<Json> callFunction(String name, Json params) =>
       request(this, 'POST', '/functions/$name', body: params);
 
+  /// Sends the stored session as usual: the server rejects anonymous
+  /// uploads with 130 unless `fileUpload.enableForPublic` is set.
+  ///
+  /// The returned [ParseFile.name] is the stored name, which a File field
+  /// must hold: the server prefixes a random hex string, and appends the
+  /// extension of [contentType] when [name] has none. [contentType] is
+  /// required because without one the server assumes `text/plain` and names
+  /// such a file `.txt`. A [name] outside
+  /// `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*`, or longer than 128 characters, fails
+  /// with 122 (`validateFilename` in FilesAdapter.js).
+  ///
+  /// Downloads are served with the type of the stored name's extension, not
+  /// [contentType]; an extension the server does not know is served as
+  /// `Content-Type: false` (`getHandler` in FilesRouter.js). File URLs use
+  /// the server's `publicServerURL` when it is set, else the request host.
+  Future<ParseFile> uploadFile(
+    Uint8List bytes, {
+    required String name,
+    required String contentType,
+  }) async {
+    final response = await request(
+      this,
+      'POST',
+      '/files/${Uri.encodeComponent(name)}',
+      raw: (bytes: bytes, contentType: contentType),
+    );
+    return ParseFile(
+      name: response.require<String>('name'),
+      url: response.require<String>('url'),
+    );
+  }
+
+  /// Items run concurrently on the server, in no set order, and each
+  /// succeeds or fails on its own unless `send(transaction: true)` is used.
+  Batch batch() => Batch._(this);
+
+  String get _mount => server.path.endsWith('/')
+      ? server.path.substring(0, server.path.length - 1)
+      : server.path;
+
   void close() {
     _changes.close();
     if (_ownsHttp) _http.close();
@@ -114,33 +156,61 @@ final class ParseClient {
 /// [path] starts with `/` and is relative to [ParseClient.server].
 ///
 /// Sends [sessionToken], or the stored session's when it is null and
-/// [stored] is true.
+/// [stored] is true. [raw] is sent as the body instead of [body], with its
+/// content type.
 Future<Json> request(
   ParseClient client,
   String method,
   String path, {
   Map<String, String>? query,
   Json? body,
+  ({Uint8List bytes, String contentType})? raw,
   String? sessionToken,
   bool stored = true,
+}) async => Json(
+  await _request<Map<String, Object?>>(
+    client,
+    method,
+    path,
+    query: query,
+    body: body,
+    raw: raw,
+    sessionToken: sessionToken,
+    stored: stored,
+  ),
+);
+
+Future<T> _request<T extends Object>(
+  ParseClient client,
+  String method,
+  String path, {
+  Map<String, String>? query,
+  Json? body,
+  ({Uint8List bytes, String contentType})? raw,
+  String? sessionToken,
+  bool stored = true,
+  bool persistent = true,
 }) async {
   if (sessionToken == null && stored) {
     sessionToken = (await client._session())?.token;
   }
-  final base = client.server.path.endsWith('/')
-      ? client.server.path.substring(0, client.server.path.length - 1)
-      : client.server.path;
   final timedOut = Completer<void>();
   final timer = Timer(client.timeout, timedOut.complete);
   final req = http.AbortableRequest(
     method,
-    client.server.replace(path: '$base$path', queryParameters: query),
+    client.server.replace(
+      path: '${client._mount}$path',
+      queryParameters: query,
+    ),
     abortTrigger: timedOut.future,
-  );
+  )..persistentConnection = persistent;
   req.headers['X-Parse-Application-Id'] = client.appId;
   if (client.clientKey case final key?) req.headers['X-Parse-Client-Key'] = key;
   if (sessionToken != null) req.headers['X-Parse-Session-Token'] = sessionToken;
-  if (body != null) {
+  if (raw != null) {
+    req.headers['Content-Type'] = raw.contentType;
+    req.bodyBytes = raw.bytes;
+  } else if (body != null) {
     // Through bodyBytes: the `body` setter appends `; charset=utf-8`.
     req.headers['Content-Type'] = 'application/json';
     req.bodyBytes = utf8.encode(jsonEncode(body));
@@ -177,7 +247,7 @@ Future<Json> request(
   }
 
   if (status >= 200 && status < 300) {
-    if (decoded is Map<String, Object?>) return Json(decoded);
+    if (decoded is T) return decoded;
     throw OtherParseError(text, code: null, status: status);
   }
   if (decoded is! Map<String, Object?>) {
@@ -197,15 +267,18 @@ Future<Json> request(
   if (code == 209 && sessionToken != null) {
     await client._invalidate(sessionToken);
   }
-  throw switch (code) {
-    101 when path == '/login' => InvalidCredentials(message, status: status),
-    101 => ObjectNotFound(message, status: status),
-    137 => DuplicateValue(message, status: status),
-    141 => ScriptFailed(message, status: status),
-    202 => UsernameTaken(message, status: status),
-    203 => EmailTaken(message, status: status),
-    209 => InvalidSession(message, status: status),
-    null when status == 403 => Unauthorized(message, status: status),
-    _ => OtherParseError(message, code: code, status: status),
-  };
+  throw _exception(code, message, status, path);
 }
+
+ParseException _exception(int? code, String message, int status, String path) =>
+    switch (code) {
+      101 when path == '/login' => InvalidCredentials(message, status: status),
+      101 => ObjectNotFound(message, status: status),
+      137 => DuplicateValue(message, status: status),
+      141 => ScriptFailed(message, status: status),
+      202 => UsernameTaken(message, status: status),
+      203 => EmailTaken(message, status: status),
+      209 => InvalidSession(message, status: status),
+      null when status == 403 => Unauthorized(message, status: status),
+      _ => OtherParseError(message, code: code, status: status),
+    };

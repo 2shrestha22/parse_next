@@ -340,6 +340,44 @@ class _Capture {
       save: 'error_203_email_taken',
     );
 
+    final mount = Uri.parse(url).path;
+    final batchItems = [
+      {
+        'method': 'POST',
+        'path': '$mount/classes/Author',
+        'body': {'name': 'Cy'},
+      },
+      {
+        'method': 'PUT',
+        'path': '$mount/classes/Post/doesNotExist',
+        'body': {'count': 1},
+      },
+      {
+        'method': 'PUT',
+        'path': '$mount/classes/Author/${authors[0]['objectId']}',
+        'body': {'name': 'Ann'},
+      },
+      {
+        'method': 'DELETE',
+        'path': '$mount/classes/Author/${authors[1]['objectId']}',
+      },
+    ];
+    await _call(
+      'POST',
+      '/batch',
+      token: aliceToken,
+      body: {'requests': batchItems},
+      save: 'batch_partial_failure',
+    );
+    await _call(
+      'POST',
+      '/batch',
+      token: aliceToken,
+      body: {'requests': batchItems.sublist(0, 2), 'transaction': true},
+      expectError: true,
+      save: 'batch_transaction_failure',
+    );
+
     return _fixtures;
   }
 

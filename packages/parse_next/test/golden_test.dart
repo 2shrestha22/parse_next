@@ -11,6 +11,8 @@ import 'fixtures.g.dart';
 import 'models.dart';
 
 const covered = {
+  'batch_partial_failure.json',
+  'batch_transaction_failure.json',
   'create_all_fields.json',
   'create_null_fields.json',
   'error_101_acl_denied.json',
@@ -227,12 +229,27 @@ void main() {
     });
   });
 
-  test('file_upload: response is the File value without __type', () {
-    final r = response('file_upload.json');
-    expect(
-      ParseFile(name: r.require<String>('name'), url: r.require<String>('url')),
-      file,
+  test('file_upload: response is the File value without __type', () async {
+    final f = fixture('file_upload.json');
+    final req = f['request']! as Map<String, Object?>;
+    final sent = <http.Request>[];
+    final client = ParseClient(
+      server: Uri.parse('http://parse.test/parse'),
+      appId: 'parse-next-it',
+      httpClient: MockClient((r) async {
+        sent.add(r);
+        return http.Response(jsonEncode(f['response']), f['status']! as int);
+      }),
     );
+    final uploaded = await client.uploadFile(
+      utf8.encode(req['body']! as String),
+      name: 'hello.txt',
+      contentType: 'text/plain',
+    );
+    expect(sent.single.url.path, '/parse${req['path']}');
+    expect(sent.single.body, req['body']);
+    expect(uploaded, file);
+    expect(uploaded.url, file.url);
   });
 
   // Request bodies here are __op ops, which are Phase 3; only the responses
@@ -411,6 +428,88 @@ void main() {
     expect(doc.updatedAt, epoch);
     expect(doc.acl, const Acl().withUser('obj0000001', write: true));
     expect(doc.data.username, 'alice');
+  });
+
+  group('batch', () {
+    late List<http.Request> sent;
+    late ParseClient client;
+
+    void replay(String name) {
+      final f = fixture(name);
+      sent = [];
+      client = ParseClient(
+        server: Uri.parse('http://parse.test/parse'),
+        appId: 'parse-next-it',
+        httpClient: MockClient((r) async {
+          sent.add(r);
+          return http.Response(jsonEncode(f['response']), f['status']! as int);
+        }),
+      );
+    }
+
+    void expectRequest(String name) {
+      final req = fixture(name)['request']! as Map<String, Object?>;
+      expect(sent.single.url.path, '/parse${req['path']}');
+      expect(jsonDecode(sent.single.body), req['body']);
+    }
+
+    test('batch_partial_failure.json', () async {
+      replay('batch_partial_failure.json');
+      final authors = client.collection(authorSchema);
+      final b = client.batch();
+      final created = b.create(authors, const Author(name: 'Cy'));
+      final missing = b.update(
+        client.collection(postSchema),
+        'doesNotExist',
+        (o) => [o.count.set(1)],
+      );
+      final updated = b.update(
+        authors,
+        'obj0000003',
+        (o) => [o.name.set('Ann')],
+      );
+      final deleted = b.delete(authors, 'obj0000004');
+      await b.send();
+      expectRequest('batch_partial_failure.json');
+
+      final doc = (created.result as Ok<Doc<Author>>).value;
+      expect(doc.id, 'obj0000008');
+      expect(doc.createdAt, epoch);
+      expect(doc.data.name, 'Cy');
+      expect(
+        (missing.result as Err<DateTime>).error,
+        isA<ObjectNotFound>()
+            .having((e) => e.message, 'message', 'Object not found.')
+            .having((e) => e.status, 'status', 404),
+      );
+      expect((updated.result as Ok<DateTime>).value, epoch);
+      expect(deleted.result, isA<Ok<void>>());
+    });
+
+    test('batch_transaction_failure.json', () async {
+      replay('batch_transaction_failure.json');
+      final b = client.batch();
+      final created = b.create(
+        client.collection(authorSchema),
+        const Author(name: 'Cy'),
+      );
+      b.update(
+        client.collection(postSchema),
+        'doesNotExist',
+        (o) => [o.count.set(1)],
+      );
+      await expectLater(
+        b.send(transaction: true),
+        throwsA(
+          isA<OtherParseError>()
+              .having((e) => e.code, 'code', 1)
+              .having((e) => e.status, 'status', 500)
+              .having((e) => e.message, 'message', 'Internal server error.'),
+        ),
+      );
+      expectRequest('batch_transaction_failure.json');
+      expect(() => created.result, throwsStateError);
+    });
   });
 
   group('auth', () {

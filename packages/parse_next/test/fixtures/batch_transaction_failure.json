@@ -1,0 +1,30 @@
+{
+  "request": {
+    "body": {
+      "requests": [
+        {
+          "body": {
+            "name": "Cy"
+          },
+          "method": "POST",
+          "path": "/parse/classes/Author"
+        },
+        {
+          "body": {
+            "count": 1
+          },
+          "method": "PUT",
+          "path": "/parse/classes/Post/doesNotExist"
+        }
+      ],
+      "transaction": true
+    },
+    "method": "POST",
+    "path": "/batch"
+  },
+  "response": {
+    "code": 1,
+    "message": "Internal server error."
+  },
+  "status": 500
+}

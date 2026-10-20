@@ -13,12 +13,9 @@ final class Collection<T, F, O> {
   /// `beforeSave` trigger changed, and its [Doc.updatedAt] is
   /// [Doc.createdAt], since the create response carries no `updatedAt`.
   Future<Doc<T>> create(T value, {Acl? acl}) async {
-    final body = Json({
-      ..._withoutNulls(_schema.encode(value)),
-      if (acl != null) 'ACL': acl.toJson(),
-    });
+    final body = _createBody(value, acl);
     final response = await request(_client, 'POST', _path, body: body);
-    return Doc.decode(_created(body, response), _schema);
+    return _createdDoc(body, response);
   }
 
   Query<T, F, O> query() => Query._(this);
@@ -31,6 +28,32 @@ final class Collection<T, F, O> {
   /// Sends the ops in one request, which the server applies atomically.
   /// Returns the new `updatedAt`.
   Future<DateTime> update(String id, List<Op> Function(O ops) build) async {
+    final body = _updateBody(build);
+    final response = await request(_client, 'PUT', _object(id), body: body);
+    return response.require<DateTime>('updatedAt');
+  }
+
+  /// Overwrites every field except relations; the ACL changes only when
+  /// [acl] is given. Returns the new `updatedAt`.
+  Future<DateTime> replace(String id, T value, {Acl? acl}) async {
+    final body = _replaceBody(value, acl);
+    final response = await request(_client, 'PUT', _object(id), body: body);
+    return response.require<DateTime>('updatedAt');
+  }
+
+  Future<void> delete(String id) async {
+    await request(_client, 'DELETE', _object(id));
+  }
+
+  Json _createBody(T value, Acl? acl) => Json({
+    ..._withoutNulls(_schema.encode(value)),
+    if (acl != null) 'ACL': acl.toJson(),
+  });
+
+  Doc<T> _createdDoc(Json sent, Json response) =>
+      Doc.decode(_created(sent, response), _schema);
+
+  Json _updateBody(List<Op> Function(O ops) build) {
     final ops = build(_schema.ops);
     if (ops.isEmpty) throw ArgumentError.value(ops, 'build', 'returned no ops');
     final body = Json({});
@@ -40,27 +63,16 @@ final class Collection<T, F, O> {
       }
       body[op._key] = op._json;
     }
-    final response = await request(_client, 'PUT', _object(id), body: body);
-    return response.require<DateTime>('updatedAt');
+    return body;
   }
 
-  /// Overwrites every field except relations; the ACL changes only when
-  /// [acl] is given. Returns the new `updatedAt`.
-  Future<DateTime> replace(String id, T value, {Acl? acl}) async {
-    final body = Json({
-      // A PUT merges into the stored object, so a null must be sent as a
-      // Delete or the old value survives.
-      for (final MapEntry(:key, value: v) in _schema.encode(value).entries)
-        key: v ?? _delete,
-      if (acl != null) 'ACL': acl.toJson(),
-    });
-    final response = await request(_client, 'PUT', _object(id), body: body);
-    return response.require<DateTime>('updatedAt');
-  }
-
-  Future<void> delete(String id) async {
-    await request(_client, 'DELETE', _object(id));
-  }
+  Json _replaceBody(T value, Acl? acl) => Json({
+    // A PUT merges into the stored object, so a null must be sent as a
+    // Delete or the old value survives.
+    for (final MapEntry(:key, value: v) in _schema.encode(value).entries)
+      key: v ?? _delete,
+    if (acl != null) 'ACL': acl.toJson(),
+  });
 }
 
 /// Not sent as null: on Mongo a stored null Polygon makes every later read of
