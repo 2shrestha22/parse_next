@@ -4,5 +4,5 @@ import 'package:parse_next/parse_next.dart';
 import '../models.dart';
 
 Query<Post, PostFields, PostOps> f(
-        Collection<Post, PostFields, PostOps> posts) =>
-    posts.query().include((f) => f.title);
+  Collection<Post, PostFields, PostOps> posts,
+) => posts.query().include((f) => f.title);

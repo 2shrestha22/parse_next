@@ -1,0 +1,7 @@
+builders:
+  parse_next:
+    import: package:parse_next_generator/parse_next_generator.dart
+    builder_factories: [parseBuilder]
+    build_extensions: {.dart: [.parse.dart]}
+    auto_apply: dependents
+    build_to: source

@@ -17,7 +17,7 @@ final class Collection<T, F, O> {
       // Not sent as null: on Mongo a stored null Polygon makes every later
       // read of the object a 500 (PolygonCoder in MongoTransform.js).
       for (final MapEntry(:key, value: v) in _schema.encode(value).entries)
-        if (v != null) key: v,
+        key: ?v,
       if (acl != null) 'ACL': acl.toJson(),
     });
     final response = await request(_client, 'POST', _path, body: body);
@@ -25,7 +25,8 @@ final class Collection<T, F, O> {
       // A field the trigger unset comes back as a Delete op
       // (`_updateResponseWithData` in parse-server's RestWrite.js).
       ..removeWhere(
-          (_, v) => v is Map<String, Object?> && v['__op'] == 'Delete');
+        (_, v) => v is Map<String, Object?> && v['__op'] == 'Delete',
+      );
     return Doc.decode(Json(stored), _schema);
   }
 

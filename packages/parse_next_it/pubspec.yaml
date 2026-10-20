@@ -3,11 +3,15 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.8.0
 
 dependencies:
+  freezed_annotation: ^3.1.0
   parse_next: any
 
 dev_dependencies:
+  build_runner: ^2.10.0
+  freezed: ">=3.2.1 <5.0.0"
   http: ^1.6.0
+  parse_next_generator: any
   test: ^1.26.0

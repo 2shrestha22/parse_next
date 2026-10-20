@@ -1,3 +1,6 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// dart format width=80
+
 part of 'user.dart';
 
 final class UserFields extends Fields<User> {
@@ -25,17 +28,17 @@ final class $UserSchema implements ParseSchema<User, UserFields, UserOps> {
 
   @override
   User decode(Json json) => User(
-        username: json.require<String>('username'),
-        displayName: json.opt<String>('display_name'),
-        karma: json.opt<int>('karma'),
-      );
+    username: json.require<String>('username'),
+    displayName: json.opt<String>('display_name'),
+    karma: json.opt<int>('karma'),
+  );
 
   @override
   Json encode(User value) => Json({
-        'username': value.username,
-        'display_name': value.displayName,
-        'karma': value.karma,
-      });
+    'username': value.username,
+    'display_name': value.displayName,
+    'karma': value.karma,
+  });
 
   @override
   UserFields get fields => const UserFields();

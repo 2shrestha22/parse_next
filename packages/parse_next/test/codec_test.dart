@@ -43,8 +43,10 @@ void main() {
         expect(() => j.requireEnum('x', Mood.values), decodeError('x'));
         expect(j.optEnum('x', Mood.values), isNull);
       }
-      final j = parse('{"l": ["a"], "p": {"__type": "Pointer",'
-          ' "className": "Author", "objectId": "a1"}}');
+      final j = parse(
+        '{"l": ["a"], "p": {"__type": "Pointer",'
+        ' "className": "Author", "objectId": "a1"}}',
+      );
       expect(j.requireList<String>('l'), ['a']);
       expect(j.requirePointer('p', authorSchema).id, 'a1');
     });
@@ -59,10 +61,14 @@ void main() {
 
     test('a value of the wrong type names its key', () {
       expect(() => parse('{"x": 1}').require<String>('x'), decodeError('x'));
-      expect(() => parse('{"x": [1, "a"]}').optList<int>('x'),
-          decodeError('x[1]'));
-      expect(() => parse('{"x": [null]}').optList<String>('x'),
-          decodeError('x[0]'));
+      expect(
+        () => parse('{"x": [1, "a"]}').optList<int>('x'),
+        decodeError('x[1]'),
+      );
+      expect(
+        () => parse('{"x": [null]}').optList<String>('x'),
+        decodeError('x[0]'),
+      );
     });
 
     test('an unknown __type raises DecodeError', () {
@@ -109,9 +115,10 @@ void main() {
 
   group('Date', () {
     test('decodes the Date object and the plain ISO string', () {
-      final j =
-          parse('{"d": {"__type": "Date", "iso": "2024-01-02T03:04:05.678Z"},'
-              ' "createdAt": "2024-01-02T03:04:05.678Z"}');
+      final j = parse(
+        '{"d": {"__type": "Date", "iso": "2024-01-02T03:04:05.678Z"},'
+        ' "createdAt": "2024-01-02T03:04:05.678Z"}',
+      );
       final expected = DateTime.utc(2024, 1, 2, 3, 4, 5, 678);
       expect(j.require<DateTime>('d'), expected);
       expect(j.require<DateTime>('createdAt'), expected);
@@ -119,15 +126,19 @@ void main() {
     });
 
     test('an offset is converted to UTC; no zone is rejected', () {
-      final j = parse('{"a": "2024-01-02T08:49:05.678+05:45",'
-          ' "b": "2024-01-02T03:04:05.678"}');
+      final j = parse(
+        '{"a": "2024-01-02T08:49:05.678+05:45",'
+        ' "b": "2024-01-02T03:04:05.678"}',
+      );
       expect(j.require<DateTime>('a'), DateTime.utc(2024, 1, 2, 3, 4, 5, 678));
       expect(() => j.require<DateTime>('b'), decodeError('b'));
     });
 
     test('encodes UTC at millisecond precision', () {
-      expect(encodeDate(DateTime.utc(2024, 1, 2, 3, 4, 5, 678, 999)),
-          {'__type': 'Date', 'iso': '2024-01-02T03:04:05.678Z'});
+      expect(encodeDate(DateTime.utc(2024, 1, 2, 3, 4, 5, 678, 999)), {
+        '__type': 'Date',
+        'iso': '2024-01-02T03:04:05.678Z',
+      });
     });
 
     test('non-UTC input is converted to UTC on encode', () {
@@ -140,9 +151,11 @@ void main() {
 
     test('a malformed iso names the nested key', () {
       expect(
-          () => parse('{"d": {"__type": "Date", "iso": "nope"}}')
-              .require<DateTime>('d'),
-          decodeError('d.iso'));
+        () => parse(
+          '{"d": {"__type": "Date", "iso": "nope"}}',
+        ).require<DateTime>('d'),
+        decodeError('d.iso'),
+      );
     });
   });
 
@@ -169,9 +182,10 @@ void main() {
 
     test('an out-of-range server value is a DecodeError', () {
       expect(
-        () => parse('{"p": {"__type": "GeoPoint", "latitude": 91,'
-                ' "longitude": 0}}')
-            .require<GeoPoint>('p'),
+        () => parse(
+          '{"p": {"__type": "GeoPoint", "latitude": 91,'
+          ' "longitude": 0}}',
+        ).require<GeoPoint>('p'),
         decodeError('p.latitude'),
       );
     });
@@ -198,15 +212,18 @@ void main() {
 
     test('needs 3 distinct vertices', () {
       expect(() => Polygon(open.sublist(0, 2)), throwsArgumentError);
-      expect(() => Polygon([...open.sublist(0, 2), GeoPoint(0, 1)]),
-          throwsArgumentError);
+      expect(
+        () => Polygon([...open.sublist(0, 2), GeoPoint(0, 1)]),
+        throwsArgumentError,
+      );
     });
 
     test('bad coordinates name the point', () {
       expect(
-        () => parse('{"a": {"__type": "Polygon", "coordinates":'
-                ' [[0, 0], [0, 1], [1, 200]]}}')
-            .require<Polygon>('a'),
+        () => parse(
+          '{"a": {"__type": "Polygon", "coordinates":'
+          ' [[0, 0], [0, 1], [1, 200]]}}',
+        ).require<Polygon>('a'),
         decodeError('a.coordinates[2]'),
       );
     });
@@ -216,7 +233,7 @@ void main() {
     test('round trips, including empty', () {
       for (final bytes in [
         Uint8List(0),
-        Uint8List.fromList([0, 1, 2, 255])
+        Uint8List.fromList([0, 1, 2, 255]),
       ]) {
         expect(Json({'b': encodeBytes(bytes)}).require<Uint8List>('b'), bytes);
       }
@@ -224,8 +241,9 @@ void main() {
 
     test('invalid base64 is a DecodeError', () {
       expect(
-        () => parse('{"b": {"__type": "Bytes", "base64": "!!"}}')
-            .require<Uint8List>('b'),
+        () => parse(
+          '{"b": {"__type": "Bytes", "base64": "!!"}}',
+        ).require<Uint8List>('b'),
         decodeError('b.base64'),
       );
     });
@@ -282,20 +300,27 @@ void main() {
 
   group('Pointer', () {
     test('encodes with the schema class name', () {
-      expect(const Pointer<Author>('a1').encode(authorSchema),
-          {'__type': 'Pointer', 'className': 'Author', 'objectId': 'a1'});
+      expect(const Pointer<Author>('a1').encode(authorSchema), {
+        '__type': 'Pointer',
+        'className': 'Author',
+        'objectId': 'a1',
+      });
     });
 
     test('a different class is a DecodeError', () {
-      final j = parse('{"p": {"__type": "Pointer", "className": "Post",'
-          ' "objectId": "a1"}}');
+      final j = parse(
+        '{"p": {"__type": "Pointer", "className": "Post",'
+        ' "objectId": "a1"}}',
+      );
       expect(() => j.optPointer('p', authorSchema), decodeError('p.className'));
     });
 
     test('an error inside an included object names the path', () {
-      final j = parse('{"p": {"__type": "Object", "className": "Author",'
-          ' "objectId": "a1", "createdAt": "2000-01-01T00:00:00.000Z",'
-          ' "updatedAt": "2000-01-01T00:00:00.000Z", "name": 7}}');
+      final j = parse(
+        '{"p": {"__type": "Object", "className": "Author",'
+        ' "objectId": "a1", "createdAt": "2000-01-01T00:00:00.000Z",'
+        ' "updatedAt": "2000-01-01T00:00:00.000Z", "name": 7}}',
+      );
       expect(() => j.optPointer('p', authorSchema), decodeError('p.name'));
     });
   });

@@ -9,13 +9,13 @@ final class Cond<T> {
   /// One object when the two share no key, `$and` otherwise.
   Cond<T> operator &(Cond<T> other) => _where.keys.any(other._where.containsKey)
       ? Cond._({
-          r'$and': [_where, other._where]
+          r'$and': [_where, other._where],
         })
       : Cond._({..._where, ...other._where});
 
   Cond<T> operator |(Cond<T> other) => Cond._({
-        r'$or': [_where, other._where]
-      });
+    r'$or': [_where, other._where],
+  });
 }
 
 /// A sort key on class [T], from a comparable field's `asc` or `desc`.
@@ -103,10 +103,8 @@ final class StringField<T> extends ComparableField<T, String> {
 
   /// [pattern] goes to the database unchanged: PCRE on Mongo, POSIX on
   /// Postgres, so keep to the syntax both share.
-  Cond<T> matches(String pattern, {bool caseInsensitive = false}) => _cond({
-        r'$regex': pattern,
-        if (caseInsensitive) r'$options': 'i',
-      });
+  Cond<T> matches(String pattern, {bool caseInsensitive = false}) =>
+      _cond({r'$regex': pattern, if (caseInsensitive) r'$options': 'i'});
 
   /// Matches [word] after stemming. Throws [ArgumentError] for more than one
   /// word: Postgres passes the term to `to_tsquery`, where a space is a
@@ -123,8 +121,8 @@ final class StringField<T> extends ComparableField<T, String> {
     }
     return _cond({
       r'$text': {
-        r'$search': {r'$term': word.trim()}
-      }
+        r'$search': {r'$term': word.trim()},
+      },
     });
   }
 }
@@ -163,13 +161,16 @@ final class PointerField<T, P> extends ExistsField<T> implements Includable<T> {
         query._limit != null ||
         query._skip != null) {
       throw ArgumentError.value(
-          query, 'query', 'must have only a where condition');
+        query,
+        'query',
+        'must have only a where condition',
+      );
     }
     return _cond({
       r'$inQuery': {
         'where': query._where?._where ?? const <String, Object?>{},
         'className': _target.className,
-      }
+      },
     });
   }
 }
@@ -177,7 +178,7 @@ final class PointerField<T, P> extends ExistsField<T> implements Includable<T> {
 final class PointerListField<T, P> extends ListField<T, Pointer<P>>
     implements Includable<T> {
   PointerListField(String key, ParseSchema<P, Object?, Object?> target)
-      : super(key, (p) => p.encode(target));
+    : super(key, (p) => p.encode(target));
 }
 
 final class GeoField<T> extends ExistsField<T> {
@@ -185,28 +186,28 @@ final class GeoField<T> extends ExistsField<T> {
 
   /// Sorts by distance, nearest first. Mongo rejects it inside `|`.
   Cond<T> near(GeoPoint point, {double? maxKm}) => _cond({
-        r'$nearSphere': point.toJson(),
-        // Radians, not `$maxDistanceInKilometers`: only the Mongo adapter
-        // reads that (MongoTransform.js).
-        if (maxKm != null) r'$maxDistance': maxKm / 6371,
-      });
+    r'$nearSphere': point.toJson(),
+    // Radians, not `$maxDistanceInKilometers`: only the Mongo adapter
+    // reads that (MongoTransform.js).
+    if (maxKm != null) r'$maxDistance': maxKm / 6371,
+  });
 
   Cond<T> withinBox(GeoPoint southwest, GeoPoint northeast) => _cond({
-        r'$within': {
-          r'$box': [southwest.toJson(), northeast.toJson()]
-        }
-      });
+    r'$within': {
+      r'$box': [southwest.toJson(), northeast.toJson()],
+    },
+  });
 
   /// Planar, on longitude and latitude, on both backends.
   Cond<T> withinPolygon(Polygon polygon) => _cond({
-        r'$geoWithin': {
-          // GeoPoints, not a Polygon value: here both adapters read Polygon
-          // coordinates as [longitude, latitude], the reverse of the stored
-          // form (`$geoWithin` in MongoTransform.js and
-          // PostgresStorageAdapter.js).
-          r'$polygon': [for (final p in polygon.points) p.toJson()]
-        }
-      });
+    r'$geoWithin': {
+      // GeoPoints, not a Polygon value: here both adapters read Polygon
+      // coordinates as [longitude, latitude], the reverse of the stored
+      // form (`$geoWithin` in MongoTransform.js and
+      // PostgresStorageAdapter.js).
+      r'$polygon': [for (final p in polygon.points) p.toJson()],
+    },
+  });
 }
 
 /// A relation on class [T] whose members are of class [R].
@@ -219,11 +220,8 @@ final class RelationField<T, R> {
   /// The members of this relation on the [T] object [ownerId]; a condition
   /// for a query on [R].
   Cond<R> of(String ownerId) => Cond._({
-        r'$relatedTo': {
-          'object': Pointer<T>(ownerId).encode(_owner),
-          'key': _key,
-        }
-      });
+    r'$relatedTo': {'object': Pointer<T>(ownerId).encode(_owner), 'key': _key},
+  });
 }
 
 /// An immutable query; every builder returns a new one.
@@ -235,11 +233,11 @@ final class Query<T, F, O> {
     List<String> order = const [],
     int? limit,
     int? skip,
-  })  : _where = where,
-        _include = include,
-        _order = order,
-        _limit = limit,
-        _skip = skip;
+  }) : _where = where,
+       _include = include,
+       _order = order,
+       _limit = limit,
+       _skip = skip;
 
   static const _pageSize = 100;
 
@@ -258,15 +256,14 @@ final class Query<T, F, O> {
     List<String>? order,
     int? limit,
     int? skip,
-  }) =>
-      Query._(
-        _collection,
-        where: where ?? _where,
-        include: include ?? _include,
-        order: order ?? _order,
-        limit: limit ?? _limit,
-        skip: skip ?? _skip,
-      );
+  }) => Query._(
+    _collection,
+    where: where ?? _where,
+    include: include ?? _include,
+    order: order ?? _order,
+    limit: limit ?? _limit,
+    skip: skip ?? _skip,
+  );
 
   /// Combines with any earlier condition using `&`.
   Query<T, F, O> where(Cond<T> Function(F f) build) {
@@ -294,11 +291,16 @@ final class Query<T, F, O> {
   /// Counts every match; `include`, `orderBy`, `limit` and `skip` are not
   /// sent.
   Future<int> count() async {
-    final response = await request(_client, 'GET', _collection._path, query: {
-      if (_where case final w?) 'where': jsonEncode(w._where),
-      'count': '1',
-      'limit': '0',
-    });
+    final response = await request(
+      _client,
+      'GET',
+      _collection._path,
+      query: {
+        if (_where case final w?) 'where': jsonEncode(w._where),
+        'count': '1',
+        'limit': '0',
+      },
+    );
     return response.require<int>('count');
   }
 
@@ -307,8 +309,10 @@ final class Query<T, F, O> {
   /// the objectId cursor replaces.
   Stream<Doc<T>> stream() {
     if (_order.isNotEmpty || _skip != null || _limit != null) {
-      throw StateError('stream() pages by objectId; '
-          'remove orderBy, skip and limit');
+      throw StateError(
+        'stream() pages by objectId; '
+        'remove orderBy, skip and limit',
+      );
     }
     return _pages();
   }
@@ -322,7 +326,7 @@ final class Query<T, F, O> {
       }
       if (docs.length < _pageSize) return;
       final after = Cond<T>._({
-        'objectId': {r'$gt': docs.last.id}
+        'objectId': {r'$gt': docs.last.id},
       });
       page = page._with(where: _where == null ? after : _where & after);
     }
@@ -330,26 +334,35 @@ final class Query<T, F, O> {
 
   /// The listed [keys] of each match, undecoded; same paging as [find].
   Future<List<Json>> raw({required List<String> keys}) async {
-    final response = await request(_client, 'GET', _collection._path, query: {
-      ..._params(limit: _limit ?? _pageSize),
-      'keys': keys.join(',')
-    });
+    final response = await request(
+      _client,
+      'GET',
+      _collection._path,
+      query: {
+        ..._params(limit: _limit ?? _pageSize),
+        'keys': keys.join(','),
+      },
+    );
     return response.requireList<Json>('results');
   }
 
   ParseClient get _client => _collection._client;
 
   Map<String, String> _params({required int limit}) => {
-        if (_where case final w?) 'where': jsonEncode(w._where),
-        if (_include.isNotEmpty) 'include': _include.join(','),
-        if (_order.isNotEmpty) 'order': _order.join(','),
-        'limit': '$limit',
-        if (_skip case final s?) 'skip': '$s',
-      };
+    if (_where case final w?) 'where': jsonEncode(w._where),
+    if (_include.isNotEmpty) 'include': _include.join(','),
+    if (_order.isNotEmpty) 'order': _order.join(','),
+    'limit': '$limit',
+    if (_skip case final s?) 'skip': '$s',
+  };
 
   Future<List<Doc<T>>> _find(Map<String, String> params) async {
-    final response =
-        await request(_client, 'GET', _collection._path, query: params);
+    final response = await request(
+      _client,
+      'GET',
+      _collection._path,
+      query: params,
+    );
     return [
       for (final r in response.requireList<Json>('results'))
         Doc.decode(r, _collection._schema),

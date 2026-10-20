@@ -104,8 +104,11 @@ final class NetworkError extends ParseException {
 /// Any other failed response. [code] is null when the body carried none,
 /// including bodies that are not JSON, whose text is then the [message].
 final class OtherParseError extends ParseException {
-  const OtherParseError(this.message,
-      {required this.code, required this.status});
+  const OtherParseError(
+    this.message, {
+    required this.code,
+    required this.status,
+  });
 
   final int? code;
   @override
@@ -113,6 +116,7 @@ final class OtherParseError extends ParseException {
   final int status;
 
   @override
-  String toString() => 'OtherParseError (${code ?? 'no code'}, HTTP $status): '
+  String toString() =>
+      'OtherParseError (${code ?? 'no code'}, HTTP $status): '
       '$message';
 }

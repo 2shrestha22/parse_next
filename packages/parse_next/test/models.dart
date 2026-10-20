@@ -82,23 +82,23 @@ final class Post {
 
   /// Every field in a form `equals` can compare; pointers become their ids.
   Map<String, Object?> get view => {
-        'title': title,
-        'slug': slug,
-        'status': status,
-        'count': count,
-        'ratio': ratio,
-        'score': score,
-        'published': published,
-        'publishedAt': publishedAt,
-        'tags': tags,
-        'meta': meta,
-        'location': location,
-        'area': area,
-        'attachment': attachment,
-        'data': data,
-        'author': author?.id,
-        'coauthors': coauthors?.map((p) => p.id).toList(),
-      };
+    'title': title,
+    'slug': slug,
+    'status': status,
+    'count': count,
+    'ratio': ratio,
+    'score': score,
+    'published': published,
+    'publishedAt': publishedAt,
+    'tags': tags,
+    'meta': meta,
+    'location': location,
+    'area': area,
+    'attachment': attachment,
+    'data': data,
+    'author': author?.id,
+    'coauthors': coauthors?.map((p) => p.id).toList(),
+  };
 }
 
 final class PostFields extends Fields<Post> {
@@ -164,45 +164,44 @@ final class PostSchema implements ParseSchema<Post, PostFields, PostOps> {
 
   @override
   Post decode(Json json) => Post(
-        title: json.opt<String>('title'),
-        slug: json.opt<String>('slug'),
-        status: json.opt<String>('status'),
-        count: json.opt<int>('count'),
-        ratio: json.opt<double>('ratio'),
-        score: json.opt<double>('score'),
-        published: json.opt<bool>('published'),
-        publishedAt: json.opt<DateTime>('publishedAt'),
-        tags: json.optList<String>('tags'),
-        meta: json.opt<Json>('meta'),
-        location: json.opt<GeoPoint>('location'),
-        area: json.opt<Polygon>('area'),
-        attachment: json.opt<ParseFile>('attachment'),
-        data: json.opt<Uint8List>('data'),
-        author: json.optPointer('author', authorSchema),
-        coauthors: json.optPointerList('coauthors', authorSchema),
-        followers: json.relation('followers', authorSchema),
-      );
+    title: json.opt<String>('title'),
+    slug: json.opt<String>('slug'),
+    status: json.opt<String>('status'),
+    count: json.opt<int>('count'),
+    ratio: json.opt<double>('ratio'),
+    score: json.opt<double>('score'),
+    published: json.opt<bool>('published'),
+    publishedAt: json.opt<DateTime>('publishedAt'),
+    tags: json.optList<String>('tags'),
+    meta: json.opt<Json>('meta'),
+    location: json.opt<GeoPoint>('location'),
+    area: json.opt<Polygon>('area'),
+    attachment: json.opt<ParseFile>('attachment'),
+    data: json.opt<Uint8List>('data'),
+    author: json.optPointer('author', authorSchema),
+    coauthors: json.optPointerList('coauthors', authorSchema),
+    followers: json.relation('followers', authorSchema),
+  );
 
   @override
   Json encode(Post value) => Json({
-        'title': value.title,
-        'slug': value.slug,
-        'status': value.status,
-        'count': value.count,
-        'ratio': value.ratio,
-        'score': value.score,
-        'published': value.published,
-        'publishedAt': _map(value.publishedAt, encodeDate),
-        'tags': value.tags,
-        'meta': value.meta,
-        'location': value.location?.toJson(),
-        'area': value.area?.toJson(),
-        'attachment': value.attachment?.toJson(),
-        'data': _map(value.data, encodeBytes),
-        'author': value.author?.encode(authorSchema),
-        'coauthors':
-            value.coauthors?.map((p) => p.encode(authorSchema)).toList(),
-      });
+    'title': value.title,
+    'slug': value.slug,
+    'status': value.status,
+    'count': value.count,
+    'ratio': value.ratio,
+    'score': value.score,
+    'published': value.published,
+    'publishedAt': _map(value.publishedAt, encodeDate),
+    'tags': value.tags,
+    'meta': value.meta,
+    'location': value.location?.toJson(),
+    'area': value.area?.toJson(),
+    'attachment': value.attachment?.toJson(),
+    'data': _map(value.data, encodeBytes),
+    'author': value.author?.encode(authorSchema),
+    'coauthors': value.coauthors?.map((p) => p.encode(authorSchema)).toList(),
+  });
 
   @override
   PostFields get fields => const PostFields();

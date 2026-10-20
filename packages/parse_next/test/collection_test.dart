@@ -35,7 +35,7 @@ void main() {
     final author = {
       '__type': 'Pointer',
       'className': 'Author',
-      'objectId': 'a1'
+      'objectId': 'a1',
     };
     for (final (name, List<Op> Function(PostOps) build, Object? json) in [
       ('set String', (o) => [o.title.set('hi')], {'title': 'hi'}),
@@ -46,65 +46,64 @@ void main() {
         'set Date',
         (o) => [o.publishedAt.set(DateTime.utc(2024, 1, 2, 3, 4, 5, 678))],
         {
-          'publishedAt': {'__type': 'Date', 'iso': updatedAt}
+          'publishedAt': {'__type': 'Date', 'iso': updatedAt},
         },
       ),
       (
         'set List',
         (o) => [
-              o.tags.set(['a'])
-            ],
+          o.tags.set(['a']),
+        ],
         {
-          'tags': ['a']
+          'tags': ['a'],
         },
       ),
       (
         'set Map',
         (o) => [
-              o.meta.set(Json({'n': 1}))
-            ],
+          o.meta.set(Json({'n': 1})),
+        ],
         {
-          'meta': {'n': 1}
+          'meta': {'n': 1},
         },
       ),
       (
         'set GeoPoint',
         (o) => [o.location.set(GeoPoint(1, 2))],
         {
-          'location': {'__type': 'GeoPoint', 'latitude': 1, 'longitude': 2}
+          'location': {'__type': 'GeoPoint', 'latitude': 1, 'longitude': 2},
         },
       ),
       (
         'set Polygon',
         (o) => [
-              o.area.set(
-                  Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)]))
-            ],
+          o.area.set(Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)])),
+        ],
         {
           'area': {
             '__type': 'Polygon',
             'coordinates': [
               [0, 0],
               [0, 1],
-              [1, 1]
+              [1, 1],
             ],
-          }
+          },
         },
       ),
       (
         'set File',
         (o) => [o.attachment.set(const ParseFile(name: 'f.txt', url: 'u'))],
         {
-          'attachment': {'__type': 'File', 'name': 'f.txt'}
+          'attachment': {'__type': 'File', 'name': 'f.txt'},
         },
       ),
       (
         'set Bytes',
         (o) => [
-              o.data.set(Uint8List.fromList([0, 255]))
-            ],
+          o.data.set(Uint8List.fromList([0, 255])),
+        ],
         {
-          'data': {'__type': 'Bytes', 'base64': 'AP8='}
+          'data': {'__type': 'Bytes', 'base64': 'AP8='},
         },
       ),
       (
@@ -115,10 +114,10 @@ void main() {
       (
         'set List<Pointer>',
         (o) => [
-              o.coauthors.set(const [Pointer('a1')])
-            ],
+          o.coauthors.set(const [Pointer('a1')]),
+        ],
         {
-          'coauthors': [author]
+          'coauthors': [author],
         },
       ),
       ('unset', (o) => [o.title.unset()], {'title': delete}),
@@ -128,67 +127,67 @@ void main() {
         'increment',
         (o) => [o.count.increment(-2)],
         {
-          'count': {'__op': 'Increment', 'amount': -2}
+          'count': {'__op': 'Increment', 'amount': -2},
         },
       ),
       (
         'add',
         (o) => [
-              o.tags.add(['a', 'b'])
-            ],
+          o.tags.add(['a', 'b']),
+        ],
         {
           'tags': {
             '__op': 'Add',
-            'objects': ['a', 'b']
-          }
+            'objects': ['a', 'b'],
+          },
         },
       ),
       (
         'addUnique',
         (o) => [
-              o.tags.addUnique(['a'])
-            ],
+          o.tags.addUnique(['a']),
+        ],
         {
           'tags': {
             '__op': 'AddUnique',
-            'objects': ['a']
-          }
+            'objects': ['a'],
+          },
         },
       ),
       (
         'remove',
         (o) => [
-              o.coauthors.remove(const [Pointer('a1')])
-            ],
+          o.coauthors.remove(const [Pointer('a1')]),
+        ],
         {
           'coauthors': {
             '__op': 'Remove',
-            'objects': [author]
-          }
+            'objects': [author],
+          },
         },
       ),
       (
         'relation add',
         (o) => [
-              o.followers.add(const [Pointer('a1')])
-            ],
+          o.followers.add(const [Pointer('a1')]),
+        ],
         {
           'followers': {
             '__op': 'AddRelation',
-            'objects': [author]
-          }
+            'objects': [author],
+          },
         },
       ),
       (
         'relation remove',
         (o) => [
-              o.followers.remove(const [Pointer('a1')])
-            ],
+          o.followers.remove(const [Pointer('a1')]),
+        ],
         {
           'followers': {
             '__op': 'RemoveRelation',
-            'objects': [author]
-          }
+            'objects': [author],
+          },
         },
       ),
       (
@@ -202,11 +201,15 @@ void main() {
     ]) {
       test(name, () async {
         final s = Server();
-        expect(await s.posts.update('p 1', build),
-            DateTime.utc(2024, 1, 2, 3, 4, 5, 678));
+        expect(
+          await s.posts.update('p 1', build),
+          DateTime.utc(2024, 1, 2, 3, 4, 5, 678),
+        );
         expect(s.only.method, 'PUT');
-        expect(s.only.url.toString(),
-            'http://parse.test/parse/classes/Post/p%201');
+        expect(
+          s.only.url.toString(),
+          'http://parse.test/parse/classes/Post/p%201',
+        );
         expect(s.body, json);
       });
     }
@@ -216,8 +219,10 @@ void main() {
     test('two ops on one key', () async {
       final s = Server();
       await expectLater(
-        () => s.posts
-            .update('p1', (o) => [o.count.increment(1), o.count.unset()]),
+        () => s.posts.update(
+          'p1',
+          (o) => [o.count.increment(1), o.count.unset()],
+        ),
         throwsArgumentError,
       );
       expect(s.requests, isEmpty);
@@ -226,36 +231,45 @@ void main() {
     test('a relation op with no targets', () async {
       final s = Server();
       await expectLater(
-          () => s.posts.update('p1', (o) => [o.followers.add([])]),
-          throwsArgumentError);
+        () => s.posts.update('p1', (o) => [o.followers.add([])]),
+        throwsArgumentError,
+      );
       await expectLater(
-          () => s.posts.update('p1', (o) => [o.followers.remove([])]),
-          throwsArgumentError);
+        () => s.posts.update('p1', (o) => [o.followers.remove([])]),
+        throwsArgumentError,
+      );
       expect(s.requests, isEmpty);
     });
 
     test('no ops', () async {
       final s = Server();
       await expectLater(
-          () => s.posts.update('p1', (o) => []), throwsArgumentError);
+        () => s.posts.update('p1', (o) => []),
+        throwsArgumentError,
+      );
       expect(s.requests, isEmpty);
     });
   });
 
-  test('replace sends every null field as Delete and never the relation',
-      () async {
-    final s = Server();
-    await s.posts
-        .replace('p1', const Post(title: 'kept'), acl: Acl.publicRead());
-    expect(s.only.method, 'PUT');
-    expect(s.body, {
-      for (final key in postSchema.encode(const Post()).keys) key: delete,
-      'title': 'kept',
-      'ACL': {
-        '*': {'read': true}
-      },
-    });
-  });
+  test(
+    'replace sends every null field as Delete and never the relation',
+    () async {
+      final s = Server();
+      await s.posts.replace(
+        'p1',
+        const Post(title: 'kept'),
+        acl: Acl.publicRead(),
+      );
+      expect(s.only.method, 'PUT');
+      expect(s.body, {
+        for (final key in postSchema.encode(const Post()).keys) key: delete,
+        'title': 'kept',
+        'ACL': {
+          '*': {'read': true},
+        },
+      });
+    },
+  );
 
   test('replace without an ACL leaves it out', () async {
     final s = Server();
@@ -264,10 +278,7 @@ void main() {
   });
 
   group('create', () {
-    final created = {
-      'objectId': 'p1',
-      'createdAt': updatedAt,
-    };
+    final created = {'objectId': 'p1', 'createdAt': updatedAt};
 
     test('sends non-null fields and the ACL', () async {
       final s = Server(created);
@@ -283,7 +294,7 @@ void main() {
         'author': {
           '__type': 'Pointer',
           'className': 'Author',
-          'objectId': 'a1'
+          'objectId': 'a1',
         },
         'ACL': {
           '*': {'read': true},
@@ -294,16 +305,14 @@ void main() {
       expect(doc.createdAt, DateTime.utc(2024, 1, 2, 3, 4, 5, 678));
       expect(doc.updatedAt, doc.createdAt);
       expect(doc.acl, Acl.publicRead().withUser('u1', write: true));
-      expect(doc.data.view,
-          Post(title: 'hi', count: 0, author: const Pointer('a1')).view);
+      expect(
+        doc.data.view,
+        Post(title: 'hi', count: 0, author: const Pointer('a1')).view,
+      );
     });
 
     test('takes the fields a trigger changed from the response', () async {
-      final s = Server({
-        ...created,
-        'title': 'HI',
-        'slug': delete,
-      });
+      final s = Server({...created, 'title': 'HI', 'slug': delete});
       final doc = await s.posts.create(const Post(title: 'hi', slug: 's'));
       expect(doc.data.title, 'HI');
       expect(doc.data.slug, isNull);

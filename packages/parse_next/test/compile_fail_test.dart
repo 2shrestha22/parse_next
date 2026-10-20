@@ -19,10 +19,11 @@ void main() {
 
     // Each file is named explicitly: the directory is excluded in
     // analysis_options.yaml, so analyzing the directory reports nothing.
-    final result = await Process.run(
-      Platform.resolvedExecutable,
-      ['analyze', '--format=machine', ...files],
-    );
+    final result = await Process.run(Platform.resolvedExecutable, [
+      'analyze',
+      '--format=machine',
+      ...files,
+    ]);
     final actual = {for (final f in files) f: <String>{}};
     for (final line in '${result.stdout}${result.stderr}'.split('\n')) {
       final parts = line.split('|');

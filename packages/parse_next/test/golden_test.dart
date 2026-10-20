@@ -44,21 +44,23 @@ Map<String, Object?> fixture(String name) {
   return jsonDecode(fixtures[name]!) as Map<String, Object?>;
 }
 
-Json body(String name) =>
-    Json((fixture(name)['request']! as Map<String, Object?>)['body']!
-        as Map<String, Object?>);
+Json body(String name) => Json(
+  (fixture(name)['request']! as Map<String, Object?>)['body']!
+      as Map<String, Object?>,
+);
 
 Json response(String name) =>
     Json(fixture(name)['response']! as Map<String, Object?>);
 
-Json firstResult(String name) =>
-    Json((response(name)['results']! as List<Object?>).single!
-        as Map<String, Object?>);
+Json firstResult(String name) => Json(
+  (response(name)['results']! as List<Object?>).single! as Map<String, Object?>,
+);
 
 final epoch = DateTime.utc(2000);
 
-final acl =
-    Acl.publicRead().withUser('obj0000001', write: true).withRole('admin');
+final acl = Acl.publicRead()
+    .withUser('obj0000001', write: true)
+    .withRole('admin');
 
 final file = ParseFile(
   name: 'file0001_hello.txt',
@@ -69,34 +71,34 @@ final file = ParseFile(
 /// the server returns it closed, and [Polygon] drops the closing point, so a
 /// decoded polygon equals this one and re-encodes to the request body.
 Post sent({ParseFile? attachment}) => Post(
-      title: 'Hello, wörld 👋',
-      slug: 'hello-world',
-      status: 'published',
-      count: 20,
-      ratio: 1.5,
-      score: 2.0,
-      published: true,
-      publishedAt: DateTime.utc(2024, 1, 2, 3, 4, 5, 678),
-      tags: ['a', 'b'],
-      meta: Json({
-        'list': [1, 'two'],
-        'n': 1,
-        'nested': {'b': true},
-        'nil': null,
-        's': 'x',
-      }),
-      location: GeoPoint(27.7, 85.3),
-      area: Polygon([
-        GeoPoint(0, 0),
-        GeoPoint(0, 1),
-        GeoPoint(1, 1),
-        GeoPoint(1, 0),
-      ]),
-      attachment: attachment ?? const ParseFile(name: 'file0001_hello.txt'),
-      data: Uint8List.fromList([0, 1, 2, 255]),
-      author: const Pointer('obj0000003'),
-      coauthors: const [Pointer('obj0000003'), Pointer('obj0000004')],
-    );
+  title: 'Hello, wörld 👋',
+  slug: 'hello-world',
+  status: 'published',
+  count: 20,
+  ratio: 1.5,
+  score: 2.0,
+  published: true,
+  publishedAt: DateTime.utc(2024, 1, 2, 3, 4, 5, 678),
+  tags: ['a', 'b'],
+  meta: Json({
+    'list': [1, 'two'],
+    'n': 1,
+    'nested': {'b': true},
+    'nil': null,
+    's': 'x',
+  }),
+  location: GeoPoint(27.7, 85.3),
+  area: Polygon([
+    GeoPoint(0, 0),
+    GeoPoint(0, 1),
+    GeoPoint(1, 1),
+    GeoPoint(1, 0),
+  ]),
+  attachment: attachment ?? const ParseFile(name: 'file0001_hello.txt'),
+  data: Uint8List.fromList([0, 1, 2, 255]),
+  author: const Pointer('obj0000003'),
+  coauthors: const [Pointer('obj0000003'), Pointer('obj0000004')],
+);
 
 final stored = sent(attachment: file).view;
 
@@ -118,8 +120,10 @@ void main() {
       final encoded = postSchema.encode(const Post());
       // The capture leaves out slug (unique index) and area (a null Polygon
       // breaks later reads on Mongo); see parse_next_it/tool/capture.dart.
-      expect(encoded.keys.toSet().difference(sentBody.keys.toSet()),
-          {'slug', 'area'});
+      expect(encoded.keys.toSet().difference(sentBody.keys.toSet()), {
+        'slug',
+        'area',
+      });
       expect({for (final k in sentBody.keys) k: encoded[k]}, sentBody);
     });
 
@@ -136,13 +140,11 @@ void main() {
   });
 
   group('get', () {
-    for (final name in [
-      'get_all_fields.json',
-      'query_all_fields.json',
-    ]) {
+    for (final name in ['get_all_fields.json', 'query_all_fields.json']) {
       test('$name decodes every field type', () {
-        final json =
-            name.startsWith('query') ? firstResult(name) : response(name);
+        final json = name.startsWith('query')
+            ? firstResult(name)
+            : response(name);
         final doc = Doc.decode(json, postSchema);
         expect(doc.id, 'obj0000005');
         expect(doc.createdAt, epoch);
@@ -163,19 +165,25 @@ void main() {
     });
 
     for (final backend in ['mongo', 'postgres']) {
-      test('get_null_fields.$backend.json: null and absent both decode absent',
-          () {
-        final doc =
-            Doc.decode(response('get_null_fields.$backend.json'), postSchema);
-        expect(doc.id, 'obj0000006');
-        expect(doc.acl, isNull);
-        expect(doc.data.view, const Post().view);
-        expect(doc.data.followers, isA<Relation<Author>>());
-      });
+      test(
+        'get_null_fields.$backend.json: null and absent both decode absent',
+        () {
+          final doc = Doc.decode(
+            response('get_null_fields.$backend.json'),
+            postSchema,
+          );
+          expect(doc.id, 'obj0000006');
+          expect(doc.acl, isNull);
+          expect(doc.data.view, const Post().view);
+          expect(doc.data.followers, isA<Relation<Author>>());
+        },
+      );
 
       test('get_after_ops.$backend.json', () {
-        final doc =
-            Doc.decode(response('get_after_ops.$backend.json'), postSchema);
+        final doc = Doc.decode(
+          response('get_after_ops.$backend.json'),
+          postSchema,
+        );
         final expected = {...stored, 'count': 21, 'title': null};
         // Postgres reorders arrays after AddUnique (see PLAN.md).
         expect(doc.data.tags, unorderedEquals(['b', 'c', 'd']));
@@ -201,8 +209,10 @@ void main() {
     });
 
     test('query_related_to: plain results decode as Doc', () {
-      final doc =
-          Doc.decode(firstResult('query_related_to.json'), authorSchema);
+      final doc = Doc.decode(
+        firstResult('query_related_to.json'),
+        authorSchema,
+      );
       expect(doc.id, 'obj0000003');
       expect(doc.data.name, 'Ann');
       expect(doc.acl, isNull);
@@ -274,8 +284,11 @@ void main() {
         isA<DuplicateValue>()
             .having((e) => e.code, 'code', 137)
             .having((e) => e.status, 'status', 400)
-            .having((e) => e.message, 'message',
-                'A duplicate value for a field with unique values was provided'),
+            .having(
+              (e) => e.message,
+              'message',
+              'A duplicate value for a field with unique values was provided',
+            ),
       ),
       (
         'error_141_script_failed.json',
@@ -304,15 +317,17 @@ void main() {
         final client = ParseClient(
           server: Uri.parse('http://parse.test/parse'),
           appId: 'parse-next-it',
-          httpClient: MockClient((_) async => http.Response(
-                jsonEncode(f['response']),
-                f['status']! as int,
-                // Express's res.json sets this; invalidRequest in
-                // middlewares.js writes the unauthorized body with res.end.
-                headers: name == 'error_unauthorized.json'
-                    ? {}
-                    : {'content-type': 'application/json; charset=utf-8'},
-              )),
+          httpClient: MockClient(
+            (_) async => http.Response(
+              jsonEncode(f['response']),
+              f['status']! as int,
+              // Express's res.json sets this; invalidRequest in
+              // middlewares.js writes the unauthorized body with res.end.
+              headers: name == 'error_unauthorized.json'
+                  ? {}
+                  : {'content-type': 'application/json; charset=utf-8'},
+            ),
+          ),
         );
         await expectLater(
           request(

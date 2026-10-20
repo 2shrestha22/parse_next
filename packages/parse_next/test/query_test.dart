@@ -13,18 +13,23 @@ const dateJson = {'__type': 'Date', 'iso': at};
 const authorPointer = {
   '__type': 'Pointer',
   'className': 'Author',
-  'objectId': 'a1'
+  'objectId': 'a1',
 };
 
-Map<String, Object?> row(String id) =>
-    {'objectId': id, 'createdAt': at, 'updatedAt': at, 'title': id};
+Map<String, Object?> row(String id) => {
+  'objectId': id,
+  'createdAt': at,
+  'updatedAt': at,
+  'title': id,
+};
 
-Map<String, Object?> results(Iterable<Map<String, Object?>> rows) =>
-    {'results': rows.toList()};
+Map<String, Object?> results(Iterable<Map<String, Object?>> rows) => {
+  'results': rows.toList(),
+};
 
 final class Server {
   Server([Map<String, Object?> Function(int call)? respond])
-      : _respond = respond ?? ((_) => results([]));
+    : _respond = respond ?? ((_) => results([]));
 
   final Map<String, Object?> Function(int call) _respond;
   final requests = <http.Request>[];
@@ -53,112 +58,112 @@ void main() {
         'ne',
         (f) => f.count.ne(1),
         {
-          'count': {r'$ne': 1}
-        }
+          'count': {r'$ne': 1},
+        },
       ),
       (
         'oneOf',
         (f) => f.status.oneOf(['a', 'b']),
         {
           'status': {
-            r'$in': ['a', 'b']
-          }
-        }
+            r'$in': ['a', 'b'],
+          },
+        },
       ),
       (
         'noneOf',
         (f) => f.status.noneOf(['a']),
         {
           'status': {
-            r'$nin': ['a']
-          }
-        }
+            r'$nin': ['a'],
+          },
+        },
       ),
       (
         'exists',
         (f) => f.meta.exists(),
         {
-          'meta': {r'$exists': true}
-        }
+          'meta': {r'$exists': true},
+        },
       ),
       (
         'exists false',
         (f) => f.slug.exists(false),
         {
-          'slug': {r'$exists': false}
-        }
+          'slug': {r'$exists': false},
+        },
       ),
       (
         'gt',
         (f) => f.count.gt(1),
         {
-          'count': {r'$gt': 1}
-        }
+          'count': {r'$gt': 1},
+        },
       ),
       (
         'gte',
         (f) => f.ratio.gte(0.5),
         {
-          'ratio': {r'$gte': 0.5}
-        }
+          'ratio': {r'$gte': 0.5},
+        },
       ),
       (
         'lt',
         (f) => f.title.lt('m'),
         {
-          'title': {r'$lt': 'm'}
-        }
+          'title': {r'$lt': 'm'},
+        },
       ),
       (
         'lte',
         (f) => f.score.lte(2),
         {
-          'score': {r'$lte': 2.0}
-        }
+          'score': {r'$lte': 2.0},
+        },
       ),
       (
         'a Date as __type Date',
         (f) => f.publishedAt.gt(date),
         {
-          'publishedAt': {r'$gt': dateJson}
-        }
+          'publishedAt': {r'$gt': dateJson},
+        },
       ),
       ('a Date eq', (f) => f.publishedAt.eq(date), {'publishedAt': dateJson}),
       (
         'createdAt as __type Date',
         (f) => f.createdAt.lte(date),
         {
-          'createdAt': {r'$lte': dateJson}
-        }
+          'createdAt': {r'$lte': dateJson},
+        },
       ),
       (
         'updatedAt',
         (f) => f.updatedAt.gte(date),
         {
-          'updatedAt': {r'$gte': dateJson}
-        }
+          'updatedAt': {r'$gte': dateJson},
+        },
       ),
       ('id as objectId', (f) => f.id.eq('p1'), {'objectId': 'p1'}),
       (
         'startsWith',
         (f) => f.title.startsWith('a.b'),
         {
-          'title': {r'$regex': r'^\Qa.b\E'}
-        }
+          'title': {r'$regex': r'^\Qa.b\E'},
+        },
       ),
       (
         'matches',
         (f) => f.title.matches('a.c'),
         {
-          'title': {r'$regex': 'a.c'}
-        }
+          'title': {r'$regex': 'a.c'},
+        },
       ),
       (
         'matches caseInsensitive',
         (f) => f.title.matches('^a', caseInsensitive: true),
         {
-          'title': {r'$regex': '^a', r'$options': 'i'}
-        }
+          'title': {r'$regex': '^a', r'$options': 'i'},
+        },
       ),
       (
         'fullText',
@@ -166,37 +171,37 @@ void main() {
         {
           'title': {
             r'$text': {
-              r'$search': {r'$term': 'word'}
-            }
-          }
-        }
+              r'$search': {r'$term': 'word'},
+            },
+          },
+        },
       ),
       (
         'contains',
         (f) => f.tags.contains('a'),
         {
           'tags': {
-            r'$all': ['a']
-          }
-        }
+            r'$all': ['a'],
+          },
+        },
       ),
       (
         'containsAll',
         (f) => f.tags.containsAll(['a', 'b']),
         {
           'tags': {
-            r'$all': ['a', 'b']
-          }
-        }
+            r'$all': ['a', 'b'],
+          },
+        },
       ),
       (
         'a pointer list contains',
         (f) => f.coauthors.contains(const Pointer('a1')),
         {
           'coauthors': {
-            r'$all': [authorPointer]
-          }
-        }
+            r'$all': [authorPointer],
+          },
+        },
       ),
       ('isId', (f) => f.author.isId('a1'), {'author': authorPointer}),
       (
@@ -207,18 +212,18 @@ void main() {
             r'$inQuery': {
               'where': {'name': 'x'},
               'className': 'Author',
-            }
-          }
-        }
+            },
+          },
+        },
       ),
       (
         'matchesQuery without a where',
         (f) => f.author.matchesQuery(authors.query()),
         {
           'author': {
-            r'$inQuery': {'where': <String, Object?>{}, 'className': 'Author'}
-          }
-        }
+            r'$inQuery': {'where': <String, Object?>{}, 'className': 'Author'},
+          },
+        },
       ),
       (
         'near',
@@ -228,10 +233,10 @@ void main() {
             r'$nearSphere': {
               '__type': 'GeoPoint',
               'latitude': 1.0,
-              'longitude': 2.0
-            }
-          }
-        }
+              'longitude': 2.0,
+            },
+          },
+        },
       ),
       (
         'near maxKm in radians',
@@ -241,11 +246,11 @@ void main() {
             r'$nearSphere': {
               '__type': 'GeoPoint',
               'latitude': 1.0,
-              'longitude': 2.0
+              'longitude': 2.0,
             },
             r'$maxDistance': 1.0,
-          }
-        }
+          },
+        },
       ),
       (
         'withinBox',
@@ -256,15 +261,16 @@ void main() {
               r'$box': [
                 {'__type': 'GeoPoint', 'latitude': 0.0, 'longitude': 1.0},
                 {'__type': 'GeoPoint', 'latitude': 2.0, 'longitude': 3.0},
-              ]
-            }
-          }
-        }
+              ],
+            },
+          },
+        },
       ),
       (
         'withinPolygon as GeoPoints',
         (f) => f.location.withinPolygon(
-            Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)])),
+          Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)]),
+        ),
         {
           'location': {
             r'$geoWithin': {
@@ -272,10 +278,10 @@ void main() {
                 {'__type': 'GeoPoint', 'latitude': 0.0, 'longitude': 0.0},
                 {'__type': 'GeoPoint', 'latitude': 0.0, 'longitude': 1.0},
                 {'__type': 'GeoPoint', 'latitude': 1.0, 'longitude': 1.0},
-              ]
-            }
-          }
-        }
+              ],
+            },
+          },
+        },
       ),
       (
         '& with distinct keys merges in call order',
@@ -284,7 +290,7 @@ void main() {
           'title': 'a',
           'count': {r'$gt': 1},
           'slug': {r'$exists': true},
-        }
+        },
       ),
       (
         '& with a shared key is \$and',
@@ -292,13 +298,13 @@ void main() {
         {
           r'$and': [
             {
-              'count': {r'$gt': 1}
+              'count': {r'$gt': 1},
             },
             {
-              'count': {r'$lt': 5}
+              'count': {r'$lt': 5},
             },
-          ]
-        }
+          ],
+        },
       ),
       (
         '| is \$or',
@@ -307,10 +313,10 @@ void main() {
           r'$or': [
             {'title': 'a'},
             {
-              'count': {r'$gt': 1}
+              'count': {r'$gt': 1},
             },
-          ]
-        }
+          ],
+        },
       ),
       (
         '| inside &',
@@ -321,7 +327,7 @@ void main() {
             {'title': 'b'},
           ],
           'count': {r'$gt': 1},
-        }
+        },
       ),
       (
         'two | under & is \$and',
@@ -334,16 +340,16 @@ void main() {
               r'$or': [
                 {'title': 'a'},
                 {'title': 'b'},
-              ]
+              ],
             },
             {
               r'$or': [
                 {'count': 1},
                 {'count': 2},
-              ]
+              ],
             },
-          ]
-        }
+          ],
+        },
       ),
     ]) {
       test(name, () async {
@@ -361,17 +367,18 @@ void main() {
     await s.authors.where((_) => const PostFields().followers.of('p 1')).find();
     expect(s.only.url.path, '/parse/classes/Author');
     expect(
-        s.params['where'],
-        jsonEncode({
-          r'$relatedTo': {
-            'object': {
-              '__type': 'Pointer',
-              'className': 'Post',
-              'objectId': 'p 1'
-            },
-            'key': 'followers',
-          }
-        }));
+      s.params['where'],
+      jsonEncode({
+        r'$relatedTo': {
+          'object': {
+            '__type': 'Pointer',
+            'className': 'Post',
+            'objectId': 'p 1',
+          },
+          'key': 'followers',
+        },
+      }),
+    );
   });
 
   test('repeated where combines with &', () async {
@@ -382,18 +389,19 @@ void main() {
         .where((f) => f.count.lt(9))
         .find();
     expect(
-        s.params['where'],
-        jsonEncode({
-          r'$and': [
-            {
-              'count': {r'$gt': 1},
-              'title': 'a'
-            },
-            {
-              'count': {r'$lt': 9}
-            },
-          ]
-        }));
+      s.params['where'],
+      jsonEncode({
+        r'$and': [
+          {
+            'count': {r'$gt': 1},
+            'title': 'a',
+          },
+          {
+            'count': {r'$lt': 9},
+          },
+        ],
+      }),
+    );
   });
 
   test('include, orderBy, limit and skip', () async {
@@ -423,26 +431,28 @@ void main() {
     await base.find();
     expect(s.params, {
       'where': jsonEncode({
-        'count': {r'$gt': 1}
+        'count': {r'$gt': 1},
       }),
       'limit': '100',
     });
   });
 
   test('find decodes rows and included pointers', () async {
-    final s = Server((_) => results([
-          {
-            ...row('p1'),
-            'author': {
-              '__type': 'Object',
-              'className': 'Author',
-              ...row('a1'),
-              'name': 'Ann',
-            },
-            'coauthors': [authorPointer],
+    final s = Server(
+      (_) => results([
+        {
+          ...row('p1'),
+          'author': {
+            '__type': 'Object',
+            'className': 'Author',
+            ...row('a1'),
+            'name': 'Ann',
           },
-          row('p2'),
-        ]));
+          'coauthors': [authorPointer],
+        },
+        row('p2'),
+      ]),
+    );
     final docs = await s.posts.query().include((f) => f.author).find();
     expect([for (final d in docs) d.id], ['p1', 'p2']);
     expect(docs.first.data.author!.loaded!.data.name, 'Ann');
@@ -461,17 +471,18 @@ void main() {
   test('count sends count=1 and limit=0 and only the where', () async {
     final s = Server((_) => {'results': <Object?>[], 'count': 7});
     expect(
-        await s.posts
-            .where((f) => f.count.gt(1))
-            .include((f) => f.author)
-            .orderBy((f) => f.count.asc)
-            .limit(3)
-            .skip(1)
-            .count(),
-        7);
+      await s.posts
+          .where((f) => f.count.gt(1))
+          .include((f) => f.author)
+          .orderBy((f) => f.count.asc)
+          .limit(3)
+          .skip(1)
+          .count(),
+      7,
+    );
     expect(s.params, {
       'where': jsonEncode({
-        'count': {r'$gt': 1}
+        'count': {r'$gt': 1},
       }),
       'count': '1',
       'limit': '0',
@@ -479,17 +490,20 @@ void main() {
   });
 
   test('raw sends keys and returns the rows undecoded', () async {
-    final s = Server((_) => results([
-          {'objectId': 'p1', 'title': 3},
-        ]));
-    final rows =
-        await s.posts.where((f) => f.count.gt(1)).raw(keys: ['title', 'count']);
+    final s = Server(
+      (_) => results([
+        {'objectId': 'p1', 'title': 3},
+      ]),
+    );
+    final rows = await s.posts
+        .where((f) => f.count.gt(1))
+        .raw(keys: ['title', 'count']);
     expect(rows, [
-      {'objectId': 'p1', 'title': 3}
+      {'objectId': 'p1', 'title': 3},
     ]);
     expect(s.params, {
       'where': jsonEncode({
-        'count': {r'$gt': 1}
+        'count': {r'$gt': 1},
       }),
       'limit': '100',
       'keys': 'title,count',
@@ -499,10 +513,11 @@ void main() {
   group('stream', () {
     test('pages by an objectId cursor, one request per page', () async {
       final ids = [
-        for (var i = 0; i < 205; i++) 'id${i.toString().padLeft(3, '0')}'
+        for (var i = 0; i < 205; i++) 'id${i.toString().padLeft(3, '0')}',
       ];
-      final s =
-          Server((call) => results(ids.skip(call * 100).take(100).map(row)));
+      final s = Server(
+        (call) => results(ids.skip(call * 100).take(100).map(row)),
+      );
       final got = await s.posts
           .where((f) => f.count.gt(1))
           .include((f) => f.author)
@@ -512,53 +527,58 @@ void main() {
       expect(got, ids);
       expect(s.requests, hasLength(3));
       final count = {r'$gt': 1};
-      expect([
-        for (final r in s.requests) r.url.queryParameters
-      ], [
-        {
-          'where': jsonEncode({'count': count}),
-          'include': 'author',
-          'order': 'objectId',
-          'limit': '100',
-        },
-        {
-          'where': jsonEncode({
-            'count': count,
-            'objectId': {r'$gt': 'id099'}
-          }),
-          'include': 'author',
-          'order': 'objectId',
-          'limit': '100',
-        },
-        {
-          'where': jsonEncode({
-            'count': count,
-            'objectId': {r'$gt': 'id199'}
-          }),
-          'include': 'author',
-          'order': 'objectId',
-          'limit': '100',
-        },
-      ]);
+      expect(
+        [for (final r in s.requests) r.url.queryParameters],
+        [
+          {
+            'where': jsonEncode({'count': count}),
+            'include': 'author',
+            'order': 'objectId',
+            'limit': '100',
+          },
+          {
+            'where': jsonEncode({
+              'count': count,
+              'objectId': {r'$gt': 'id099'},
+            }),
+            'include': 'author',
+            'order': 'objectId',
+            'limit': '100',
+          },
+          {
+            'where': jsonEncode({
+              'count': count,
+              'objectId': {r'$gt': 'id199'},
+            }),
+            'include': 'author',
+            'order': 'objectId',
+            'limit': '100',
+          },
+        ],
+      );
     });
 
     test('an id condition and the cursor combine with \$and', () async {
-      final s = Server((call) => results(
-          call == 0 ? [for (var i = 0; i < 100; i++) row('id$i')] : const []));
+      final s = Server(
+        (call) => results(
+          call == 0 ? [for (var i = 0; i < 100; i++) row('id$i')] : const [],
+        ),
+      );
       await s.posts.where((f) => f.id.gt('a')).stream().drain<void>();
       expect(s.requests, hasLength(2));
       expect(
-          s.requests.last.url.queryParameters['where'],
-          jsonEncode({
-            r'$and': [
-              {
-                'objectId': {r'$gt': 'a'}
-              },
-              {
-                'objectId': {r'$gt': 'id99'}
-              },
-            ]
-          }));
+        s.requests.last.url.queryParameters['where'],
+        jsonEncode({
+          r'$and': [
+            {
+              'objectId': {r'$gt': 'a'},
+            },
+            {
+              'objectId': {r'$gt': 'id99'},
+            },
+          ],
+        }),
+      );
     });
 
     test('sends nothing until listened to', () async {
@@ -572,12 +592,15 @@ void main() {
     for (final (
           name,
           Query<Post, PostFields, PostOps> Function(
-              Query<Post, PostFields, PostOps>) build
-        ) in [
-      ('orderBy', (q) => q.orderBy((f) => f.count.asc)),
-      ('skip', (q) => q.skip(1)),
-      ('limit', (q) => q.limit(1)),
-    ]) {
+            Query<Post, PostFields, PostOps>,
+          )
+          build,
+        )
+        in [
+          ('orderBy', (q) => q.orderBy((f) => f.count.asc)),
+          ('skip', (q) => q.skip(1)),
+          ('limit', (q) => q.limit(1)),
+        ]) {
       test('throws StateError with $name', () {
         final s = Server();
         expect(() => build(s.posts.query()).stream(), throwsStateError);
@@ -592,13 +615,17 @@ void main() {
     });
 
     test(r'startsWith with \E', () {
-      expect(() => const PostFields().title.startsWith(r'a\Eb'),
-          throwsArgumentError);
+      expect(
+        () => const PostFields().title.startsWith(r'a\Eb'),
+        throwsArgumentError,
+      );
     });
 
     test('fullText with more than one word', () {
       expect(
-          () => const PostFields().title.fullText('a b'), throwsArgumentError);
+        () => const PostFields().title.fullText('a b'),
+        throwsArgumentError,
+      );
       expect(() => const PostFields().title.fullText(' '), throwsArgumentError);
     });
 
@@ -609,8 +636,10 @@ void main() {
         s.authors.query().skip(1),
         s.authors.query().orderBy((f) => f.name.asc),
       ]) {
-        expect(() => const PostFields().author.matchesQuery(q),
-            throwsArgumentError);
+        expect(
+          () => const PostFields().author.matchesQuery(q),
+          throwsArgumentError,
+        );
       }
       expect(s.requests, isEmpty);
     });

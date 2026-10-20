@@ -8,6 +8,7 @@ part 'post.parse.dart';
 
 enum PostStatus { draft, published, archived }
 
+@ParseClass('Post')
 final class Post {
   const Post({
     required this.title,
@@ -20,7 +21,7 @@ final class Post {
     this.weight,
     required this.published,
     this.pinned,
-    required this.publishedAt,
+    @ParseKey('published_at') required this.publishedAt,
     this.editedAt,
     required this.status,
     this.previousStatus,
@@ -38,7 +39,7 @@ final class Post {
     required this.location,
     required this.area,
     this.zone,
-    required this.thumbnail,
+    @ParseKey('thumb') required this.thumbnail,
     this.data,
   });
 

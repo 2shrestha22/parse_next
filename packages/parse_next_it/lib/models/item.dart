@@ -6,13 +6,14 @@ part 'item.parse.dart';
 
 enum Kind { red, green, blue }
 
+@ParseClass('Item')
 final class Item {
   const Item({
     required this.name,
     this.note,
     required this.rank,
     this.score,
-    required this.at,
+    @ParseKey('happened_at') required this.at,
     required this.kind,
     required this.flag,
     required this.tags,

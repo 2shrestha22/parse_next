@@ -43,6 +43,16 @@ no_match -rnE 'skip:[[:space:]]*true|@Skip\([[:space:]]*\)' packages/*/test ||
 step "embedded fixtures are current"
 dart run packages/parse_next/tool/embed_fixtures.dart --check
 
+step "generated code is current"
+# freezed's output differs between the versions pub resolves on the lower
+# bound and on stable; only stable's matches the committed files.
+generated=(-name '*.parse.dart')
+[ "${PUB_RESOLVE:-}" = "1" ] || generated+=(-o -name '*.freezed.dart')
+sums() { find packages/parse_next_it/lib "${generated[@]}" | sort | xargs cksum; }
+before=$(sums)
+(cd packages/parse_next_it && dart run build_runner build --delete-conflicting-outputs)
+[ "$before" = "$(sums)" ] || fail "generated code is stale; run build_runner in packages/parse_next_it"
+
 step "G3 analyze"
 dart analyze --fatal-infos
 
@@ -50,10 +60,9 @@ step "G4 format"
 dart format --output=none --set-exit-if-changed .
 
 step "G5 unit tests"
-for pkg in packages/parse_next packages/parse_next_generator; do
-  [ -d "$pkg/test" ] || continue
-  (cd "$pkg" && dart test -p vm,chrome)
-done
+(cd packages/parse_next && dart test -p vm,chrome)
+# The generator runs the analyzer, which needs dart:io.
+(cd packages/parse_next_generator && dart test -p vm)
 
 step "integration tests"
 "${compose[@]}" down -v

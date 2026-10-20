@@ -41,7 +41,7 @@ Package names `parse_next` and `parse_next_generator` were unclaimed on pub.dev 
 | G9 | No skipped test without a reason string | CI fails on `skip: true` |
 
 Pinned at the start and changed only on purpose:
-- the Dart SDK lower bound (CI also tests the latest stable): **3.6.0**
+- the Dart SDK lower bound (CI also tests the latest stable): **3.8.0**
 - the `parse-server` image (current major and the previous one): **`parseplatform/parse-server:9.10.5`**, previous major **`8.6.112`** (`PARSE_SERVER_VERSION`)
 - Mongo and Postgres versions: **`mongo:8.0.34`**, **`postgis/postgis:18-3.6`** pinned by digest
 
@@ -94,7 +94,7 @@ Later phases must follow these:
 ## Repo layout
 
 ```
-parse_next/                     pub workspace (Dart ≥ 3.6)
+parse_next/                     pub workspace (Dart ≥ 3.8)
   packages/parse_next/            runtime: client, codec, query/ops DSL, auth, live query, annotations
   packages/parse_next_generator/  build_runner builder, dev_dependency only
   packages/parse_next_it/         integration tests, models, cloud/main.js; never published
@@ -343,6 +343,6 @@ parse_next/                     pub workspace (Dart ≥ 3.6)
 - Web is a supported platform.
 - The master key stays out of v1.
 - Not settled yet: parse-server's batch limit (Phase 8).
-- Dart SDK lower bound is 3.6.0, the first stable release with pub workspaces; extension types, sealed classes and patterns are older. Analyze, format and unit tests pass in `dart:3.6.0`, where pub resolves `lints` 5.1.1 and `test` 1.26.3.
+- Dart SDK lower bound is 3.8.0, raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
 - parse-server 9.10.5 is the latest release of the current major and 8.6.112 of the previous one. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are the newest versions that parse-server's own CI tests on both majors (9.x also tests Mongo 8.3; 8.x does not). PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.
 - Fixtures are normalized so a rerun writes identical files: object ids, session tokens and file names become placeholders numbered by first appearance (`obj0000001`, `r:session0001`, `file0001_hello.txt`), every `createdAt`/`updatedAt` becomes `2000-01-01T00:00:00.000Z`, the server URL becomes `http://parse.test/parse`, and object keys are sorted. A fixture that differs between backends after this is kept as `<name>.mongo.json` and `<name>.postgres.json`.

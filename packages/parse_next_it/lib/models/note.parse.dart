@@ -1,3 +1,6 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// dart format width=80
+
 part of 'note.dart';
 
 final class NoteFields extends Fields<Note> {
@@ -25,17 +28,17 @@ final class $NoteSchema implements ParseSchema<Note, NoteFields, NoteOps> {
 
   @override
   Note decode(Json json) => Note(
-        text: json.require<String>('text'),
-        draft: json.opt<bool>('draft'),
-        place: json.opt<GeoPoint>('place'),
-      );
+    text: json.require<String>('text'),
+    draft: json.opt<bool>('draft'),
+    place: json.opt<GeoPoint>('place'),
+  );
 
   @override
   Json encode(Note value) => Json({
-        'text': value.text,
-        'draft': value.draft,
-        'place': value.place?.toJson(),
-      });
+    'text': value.text,
+    'draft': value.draft,
+    'place': value.place?.toJson(),
+  });
 
   @override
   NoteFields get fields => const NoteFields();

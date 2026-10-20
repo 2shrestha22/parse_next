@@ -1,3 +1,6 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// dart format width=80
+
 part of 'item.dart';
 
 final class ItemFields extends Fields<Item> {
@@ -48,36 +51,34 @@ final class $ItemSchema implements ParseSchema<Item, ItemFields, ItemOps> {
 
   @override
   Item decode(Json json) => Item(
-        name: json.require<String>('name'),
-        note: json.opt<String>('note'),
-        rank: json.require<int>('rank'),
-        score: json.opt<double>('score'),
-        at: json.require<DateTime>('happened_at'),
-        kind: json.requireEnum('kind', Kind.values),
-        flag: json.require<bool>('flag'),
-        tags: json.requireList<String>('tags'),
-        owner: json.requirePointer('owner', const $UserSchema()),
-        helpers: json.requirePointerList('helpers', const $UserSchema()),
-        spot: json.require<GeoPoint>('spot'),
-        fans: json.relation('fans', const $UserSchema()),
-      );
+    name: json.require<String>('name'),
+    note: json.opt<String>('note'),
+    rank: json.require<int>('rank'),
+    score: json.opt<double>('score'),
+    at: json.require<DateTime>('happened_at'),
+    kind: json.requireEnum('kind', Kind.values),
+    flag: json.require<bool>('flag'),
+    tags: json.requireList<String>('tags'),
+    owner: json.requirePointer('owner', const $UserSchema()),
+    helpers: json.requirePointerList('helpers', const $UserSchema()),
+    spot: json.require<GeoPoint>('spot'),
+    fans: json.relation('fans', const $UserSchema()),
+  );
 
   @override
   Json encode(Item value) => Json({
-        'name': value.name,
-        'note': value.note,
-        'rank': value.rank,
-        'score': value.score,
-        'happened_at': encodeDate(value.at),
-        'kind': value.kind.name,
-        'flag': value.flag,
-        'tags': value.tags,
-        'owner': value.owner.encode(const $UserSchema()),
-        'helpers': [
-          for (final p in value.helpers) p.encode(const $UserSchema()),
-        ],
-        'spot': value.spot.toJson(),
-      });
+    'name': value.name,
+    'note': value.note,
+    'rank': value.rank,
+    'score': value.score,
+    'happened_at': encodeDate(value.at),
+    'kind': value.kind.name,
+    'flag': value.flag,
+    'tags': value.tags,
+    'owner': value.owner.encode(const $UserSchema()),
+    'helpers': [for (final p in value.helpers) p.encode(const $UserSchema())],
+    'spot': value.spot.toJson(),
+  });
 
   @override
   ItemFields get fields => const ItemFields();

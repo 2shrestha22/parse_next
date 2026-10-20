@@ -41,22 +41,27 @@ extension type const Json(Map<String, Object?> _map)
   }
 
   Pointer<T> requirePointer<T>(
-          String key, ParseSchema<T, Object?, Object?> schema) =>
-      optPointer(key, schema) ?? (throw DecodeError(key, 'missing'));
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) => optPointer(key, schema) ?? (throw DecodeError(key, 'missing'));
 
   Pointer<T>? optPointer<T>(
-      String key, ParseSchema<T, Object?, Object?> schema) {
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) {
     final v = this[key];
     return v == null ? null : _pointer(key, v, schema);
   }
 
   List<Pointer<T>> requirePointerList<T>(
-          String key, ParseSchema<T, Object?, Object?> schema) =>
-      optPointerList(key, schema) ?? (throw DecodeError(key, 'missing'));
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) => optPointerList(key, schema) ?? (throw DecodeError(key, 'missing'));
 
   List<Pointer<T>>? optPointerList<T>(
-          String key, ParseSchema<T, Object?, Object?> schema) =>
-      _list(key, (k, v) => _pointer(k, v, schema));
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) => _list(key, (k, v) => _pointer(k, v, schema));
 
   Relation<T> relation<T>(String key, ParseSchema<T, Object?, Object?> schema) {
     final v = this[key];
@@ -74,9 +79,9 @@ extension type const Json(Map<String, Object?> _map)
     if (v is! List<Object?>) {
       throw DecodeError(key, 'expected a list, got ${_kind(v)}');
     }
-    return List.unmodifiable(
-      [for (var i = 0; i < v.length; i++) decode('$key[$i]', v[i])],
-    );
+    return List.unmodifiable([
+      for (var i = 0; i < v.length; i++) decode('$key[$i]', v[i]),
+    ]);
   }
 }
 
@@ -106,12 +111,15 @@ final class Doc<T> {
   });
 
   factory Doc.decode(Json json, ParseSchema<T, Object?, Object?> schema) => Doc(
-        id: json.require<String>('objectId'),
-        createdAt: json.require<DateTime>('createdAt'),
-        updatedAt: json.require<DateTime>('updatedAt'),
-        acl: switch (json['ACL']) { null => null, final v => _acl('ACL', v) },
-        data: schema.decode(json),
-      );
+    id: json.require<String>('objectId'),
+    createdAt: json.require<DateTime>('createdAt'),
+    updatedAt: json.require<DateTime>('updatedAt'),
+    acl: switch (json['ACL']) {
+      null => null,
+      final v => _acl('ACL', v),
+    },
+    data: schema.decode(json),
+  );
 
   final String id;
   final DateTime createdAt;
@@ -132,8 +140,11 @@ final class Pointer<T> {
   /// readable.
   final Doc<T>? loaded;
 
-  Map<String, Object?> encode(ParseSchema<T, Object?, Object?> schema) =>
-      {'__type': 'Pointer', 'className': schema.className, 'objectId': id};
+  Map<String, Object?> encode(ParseSchema<T, Object?, Object?> schema) => {
+    '__type': 'Pointer',
+    'className': schema.className,
+    'objectId': id,
+  };
 }
 
 /// Stands for a relation field; its members are read and changed by query
@@ -155,8 +166,11 @@ final class GeoPoint {
   final double latitude;
   final double longitude;
 
-  Map<String, Object?> toJson() =>
-      {'__type': 'GeoPoint', 'latitude': latitude, 'longitude': longitude};
+  Map<String, Object?> toJson() => {
+    '__type': 'GeoPoint',
+    'latitude': latitude,
+    'longitude': longitude,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -176,25 +190,28 @@ final class Polygon {
   /// because the server closes the ring by appending the first point
   /// (`PolygonCoder.JSONToDatabase` in parse-server's `MongoTransform.js`).
   Polygon(List<GeoPoint> points)
-      : points = List.unmodifiable(
-          points.length > 1 && points.first == points.last
-              ? points.sublist(0, points.length - 1)
-              : points,
-        ) {
+    : points = List.unmodifiable(
+        points.length > 1 && points.first == points.last
+            ? points.sublist(0, points.length - 1)
+            : points,
+      ) {
     if (this.points.toSet().length < 3) {
       throw ArgumentError.value(
-          points, 'points', 'needs at least 3 distinct vertices');
+        points,
+        'points',
+        'needs at least 3 distinct vertices',
+      );
     }
   }
 
   final List<GeoPoint> points;
 
   Map<String, Object?> toJson() => {
-        '__type': 'Polygon',
-        'coordinates': [
-          for (final p in points) [p.latitude, p.longitude],
-        ],
-      };
+    '__type': 'Polygon',
+    'coordinates': [
+      for (final p in points) [p.latitude, p.longitude],
+    ],
+  };
 
   @override
   bool operator ==(Object other) {
@@ -267,9 +284,9 @@ final class Acl {
   }
 
   Map<String, Object?> toJson() => {
-        for (final MapEntry(:key, value: a) in _entries.entries)
-          key: {if (a.read) 'read': true, if (a.write) 'write': true},
-      };
+    for (final MapEntry(:key, value: a) in _entries.entries)
+      key: {if (a.read) 'read': true, if (a.write) 'write': true},
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -279,20 +296,25 @@ final class Acl {
 
   @override
   int get hashCode => Object.hashAllUnordered(
-      _entries.entries.map((e) => Object.hash(e.key, e.value)));
+    _entries.entries.map((e) => Object.hash(e.key, e.value)),
+  );
 
   @override
   String toString() => 'Acl($_entries)';
 }
 
 /// Always UTC, truncated to the millisecond the server stores.
-Map<String, Object?> encodeDate(DateTime date) =>
-    {'__type': 'Date', 'iso': _truncate(date).toIso8601String()};
+Map<String, Object?> encodeDate(DateTime date) => {
+  '__type': 'Date',
+  'iso': _truncate(date).toIso8601String(),
+};
 
 /// The server rejects empty bytes with 111, since it checks `base64` for
 /// truthiness (`getObjectType` in SchemaController.js).
-Map<String, Object?> encodeBytes(Uint8List bytes) =>
-    {'__type': 'Bytes', 'base64': base64Encode(bytes)};
+Map<String, Object?> encodeBytes(Uint8List bytes) => {
+  '__type': 'Bytes',
+  'base64': base64Encode(bytes),
+};
 
 T _as<T extends Object>(String key, Object? v) {
   if (v is num) {
@@ -316,16 +338,16 @@ T _as<T extends Object>(String key, Object? v) {
 }
 
 String _kind(Object? v) => switch (v) {
-      null => 'null',
-      String() => 'string',
-      num() => 'number',
-      bool() => 'bool',
-      List<Object?>() => 'list',
-      Map<String, Object?>() when v.containsKey('__type') =>
-        '__type ${v['__type']}',
-      Map<String, Object?>() => 'object',
-      _ => 'unknown',
-    };
+  null => 'null',
+  String() => 'string',
+  num() => 'number',
+  bool() => 'bool',
+  List<Object?>() => 'list',
+  Map<String, Object?>() when v.containsKey('__type') =>
+    '__type ${v['__type']}',
+  Map<String, Object?>() => 'object',
+  _ => 'unknown',
+};
 
 R _within<R>(String key, R Function() decode) {
   try {
@@ -340,11 +362,16 @@ Map<String, Object?> _typed(String key, Object? v, String type) {
   throw DecodeError(key, 'expected __type $type, got ${_kind(v)}');
 }
 
-void _checkClass(String key, String className,
-    ParseSchema<Object?, Object?, Object?> schema) {
+void _checkClass(
+  String key,
+  String className,
+  ParseSchema<Object?, Object?, Object?> schema,
+) {
   if (className != schema.className) {
     throw DecodeError(
-        '$key.className', 'expected ${schema.className}, got $className');
+      '$key.className',
+      'expected ${schema.className}, got $className',
+    );
   }
 }
 
@@ -424,7 +451,10 @@ Uint8List _bytes(String key, Object? v) {
 }
 
 Pointer<T> _pointer<T>(
-    String key, Object? v, ParseSchema<T, Object?, Object?> schema) {
+  String key,
+  Object? v,
+  ParseSchema<T, Object?, Object?> schema,
+) {
   if (v is! Map<String, Object?>) {
     throw DecodeError(key, 'expected a Pointer, got ${_kind(v)}');
   }
@@ -456,7 +486,9 @@ Acl _acl(String key, Object? v) {
   for (final MapEntry(key: who, value: access) in v.entries) {
     if (access is! Map<String, Object?>) {
       throw DecodeError(
-          '$key.$who', 'expected an object, got ${_kind(access)}');
+        '$key.$who',
+        'expected an object, got ${_kind(access)}',
+      );
     }
     final j = Json(access);
     acl = _within('$key.$who', () {

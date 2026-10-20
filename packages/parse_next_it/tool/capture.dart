@@ -10,7 +10,8 @@ const _fixedInstant = '2000-01-01T00:00:00.000Z';
 
 final _compose = Platform.script.resolve('../../../docker/compose.yaml');
 final _fixtures = Directory.fromUri(
-    Platform.script.resolve('../../parse_next/test/fixtures/'));
+  Platform.script.resolve('../../parse_next/test/fixtures/'),
+);
 
 Future<void> main() async {
   final captured = <String, Map<String, Object?>>{};
@@ -65,15 +66,20 @@ class _Capture {
 
     final authors = [
       for (final name in ['Ann', 'Ben'])
-        _pointer('Author',
-            (await _call('POST', '/classes/Author', body: {'name': name}))),
+        _pointer(
+          'Author',
+          (await _call('POST', '/classes/Author', body: {'name': name})),
+        ),
     ];
 
-    final upload = await _call('POST', '/files/hello.txt',
-        token: aliceToken,
-        rawBody: 'hello',
-        contentType: 'text/plain',
-        save: 'file_upload');
+    final upload = await _call(
+      'POST',
+      '/files/hello.txt',
+      token: aliceToken,
+      rawBody: 'hello',
+      contentType: 'text/plain',
+      save: 'file_upload',
+    );
 
     final allFields = <String, Object?>{
       'title': 'Hello, wörld 👋',
@@ -112,24 +118,39 @@ class _Capture {
         'role:admin': {'read': true},
       },
     };
-    final created = await _call('POST', '/classes/Post',
-        token: aliceToken, body: allFields, save: 'create_all_fields');
+    final created = await _call(
+      'POST',
+      '/classes/Post',
+      token: aliceToken,
+      body: allFields,
+      save: 'create_all_fields',
+    );
     final id = created['objectId']! as String;
-    await _call('GET', '/classes/Post/$id',
-        token: aliceToken, save: 'get_all_fields');
-    await _call('GET', '/classes/Post',
-        token: aliceToken,
-        query: {
-          'where': jsonEncode({'objectId': id})
-        },
-        save: 'query_all_fields');
-    await _call('GET', '/classes/Post',
-        token: aliceToken,
-        query: {
-          'where': jsonEncode({'objectId': id}),
-          'include': 'author,coauthors',
-        },
-        save: 'query_include');
+    await _call(
+      'GET',
+      '/classes/Post/$id',
+      token: aliceToken,
+      save: 'get_all_fields',
+    );
+    await _call(
+      'GET',
+      '/classes/Post',
+      token: aliceToken,
+      query: {
+        'where': jsonEncode({'objectId': id}),
+      },
+      save: 'query_all_fields',
+    );
+    await _call(
+      'GET',
+      '/classes/Post',
+      token: aliceToken,
+      query: {
+        'where': jsonEncode({'objectId': id}),
+        'include': 'author,coauthors',
+      },
+      save: 'query_include',
+    );
 
     // Not 'area': on Mongo a null Polygon makes every later read or delete of
     // the object fail with 500 "Cannot read properties of null".
@@ -137,10 +158,19 @@ class _Capture {
       for (final key in allFields.keys)
         if (!const {'ACL', 'slug', 'area'}.contains(key)) key: null,
     };
-    final createdNull = await _call('POST', '/classes/Post',
-        token: aliceToken, body: nullFields, save: 'create_null_fields');
-    await _call('GET', '/classes/Post/${createdNull['objectId']}',
-        token: aliceToken, save: 'get_null_fields');
+    final createdNull = await _call(
+      'POST',
+      '/classes/Post',
+      token: aliceToken,
+      body: nullFields,
+      save: 'create_null_fields',
+    );
+    await _call(
+      'GET',
+      '/classes/Post/${createdNull['objectId']}',
+      token: aliceToken,
+      save: 'get_null_fields',
+    );
 
     final ops = <String, Map<String, Object?>>{
       'op_increment': {
@@ -178,49 +208,83 @@ class _Capture {
       },
     };
     for (final MapEntry(key: name, value: body) in ops.entries) {
-      await _call('PUT', '/classes/Post/$id',
-          token: aliceToken, body: body, save: name);
+      await _call(
+        'PUT',
+        '/classes/Post/$id',
+        token: aliceToken,
+        body: body,
+        save: name,
+      );
     }
-    await _call('GET', '/classes/Post/$id',
-        token: aliceToken, save: 'get_after_ops');
-    await _call('GET', '/classes/Author',
-        token: aliceToken,
-        query: {
-          'where': jsonEncode({
-            r'$relatedTo': {
-              'object': {
-                '__type': 'Pointer',
-                'className': 'Post',
-                'objectId': id
-              },
-              'key': 'followers',
+    await _call(
+      'GET',
+      '/classes/Post/$id',
+      token: aliceToken,
+      save: 'get_after_ops',
+    );
+    await _call(
+      'GET',
+      '/classes/Author',
+      token: aliceToken,
+      query: {
+        'where': jsonEncode({
+          r'$relatedTo': {
+            'object': {
+              '__type': 'Pointer',
+              'className': 'Post',
+              'objectId': id,
             },
-          }),
-        },
-        save: 'query_related_to');
+            'key': 'followers',
+          },
+        }),
+      },
+      save: 'query_related_to',
+    );
 
-    await _call('GET', '/classes/Post/doesNotExist',
-        token: aliceToken, expectError: true, save: 'error_101_missing');
-    await _call('PUT', '/classes/Post/$id',
-        token: bobToken,
-        body: {'count': 0},
-        expectError: true,
-        save: 'error_101_acl_denied');
-    await _call('POST', '/classes/Post',
-        token: aliceToken,
-        body: {'slug': 'hello-world'},
-        expectError: true,
-        save: 'error_137_duplicate');
-    await _call('POST', '/functions/fail',
-        body: <String, Object?>{},
-        expectError: true,
-        save: 'error_141_script_failed');
-    await _call('GET', '/classes/Post',
-        token: 'r:invalid',
-        expectError: true,
-        save: 'error_209_invalid_session');
-    await _call('GET', '/classes/Post',
-        appId: 'wrong-app-id', expectError: true, save: 'error_unauthorized');
+    await _call(
+      'GET',
+      '/classes/Post/doesNotExist',
+      token: aliceToken,
+      expectError: true,
+      save: 'error_101_missing',
+    );
+    await _call(
+      'PUT',
+      '/classes/Post/$id',
+      token: bobToken,
+      body: {'count': 0},
+      expectError: true,
+      save: 'error_101_acl_denied',
+    );
+    await _call(
+      'POST',
+      '/classes/Post',
+      token: aliceToken,
+      body: {'slug': 'hello-world'},
+      expectError: true,
+      save: 'error_137_duplicate',
+    );
+    await _call(
+      'POST',
+      '/functions/fail',
+      body: <String, Object?>{},
+      expectError: true,
+      save: 'error_141_script_failed',
+    );
+    await _call(
+      'GET',
+      '/classes/Post',
+      token: 'r:invalid',
+      expectError: true,
+      save: 'error_209_invalid_session',
+    );
+    await _call(
+      'GET',
+      '/classes/Post',
+      appId: 'wrong-app-id',
+      expectError: true,
+      save: 'error_unauthorized',
+    );
 
     return _fixtures;
   }
@@ -232,54 +296,64 @@ class _Capture {
     for (final cls in ['Post', 'Author']) {
       await _call('DELETE', '/schemas/$cls', master: true, expectError: true);
     }
-    await _call('POST', '/schemas/Author', master: true, body: {
-      'className': 'Author',
-      'fields': {
-        'name': {'type': 'String'},
+    await _call(
+      'POST',
+      '/schemas/Author',
+      master: true,
+      body: {
+        'className': 'Author',
+        'fields': {
+          'name': {'type': 'String'},
+        },
       },
-    });
-    await _call('POST', '/schemas/Post', master: true, body: {
-      'className': 'Post',
-      'fields': {
-        'title': {'type': 'String'},
-        'slug': {'type': 'String'},
-        'count': {'type': 'Number'},
-        'ratio': {'type': 'Number'},
-        'score': {'type': 'Number'},
-        'published': {'type': 'Boolean'},
-        'publishedAt': {'type': 'Date'},
-        'status': {'type': 'String'},
-        'tags': {'type': 'Array'},
-        'meta': {'type': 'Object'},
-        'author': {'type': 'Pointer', 'targetClass': 'Author'},
-        'coauthors': {'type': 'Array'},
-        'followers': {'type': 'Relation', 'targetClass': 'Author'},
-        'attachment': {'type': 'File'},
-        'location': {'type': 'GeoPoint'},
-        'area': {'type': 'Polygon'},
-        'data': {'type': 'Bytes'},
+    );
+    await _call(
+      'POST',
+      '/schemas/Post',
+      master: true,
+      body: {
+        'className': 'Post',
+        'fields': {
+          'title': {'type': 'String'},
+          'slug': {'type': 'String'},
+          'count': {'type': 'Number'},
+          'ratio': {'type': 'Number'},
+          'score': {'type': 'Number'},
+          'published': {'type': 'Boolean'},
+          'publishedAt': {'type': 'Date'},
+          'status': {'type': 'String'},
+          'tags': {'type': 'Array'},
+          'meta': {'type': 'Object'},
+          'author': {'type': 'Pointer', 'targetClass': 'Author'},
+          'coauthors': {'type': 'Array'},
+          'followers': {'type': 'Relation', 'targetClass': 'Author'},
+          'attachment': {'type': 'File'},
+          'location': {'type': 'GeoPoint'},
+          'area': {'type': 'Polygon'},
+          'data': {'type': 'Bytes'},
+        },
       },
-    });
+    );
     // parse-server's REST schema API cannot create unique indexes.
     await _exec(switch (backend) {
       'mongo' => [
-          'mongo',
-          'mongosh',
-          '--quiet',
-          'parse',
-          '--eval',
-          'db.Post.createIndex({slug: 1}, {unique: true})',
-        ],
+        'mongo',
+        'mongosh',
+        '--quiet',
+        'parse',
+        '--eval',
+        'db.Post.createIndex({slug: 1}, {unique: true})',
+      ],
       'postgres' => [
-          'postgres',
-          'psql',
-          '-U',
-          'postgres',
-          '-d',
-          'parse',
-          '-c',
-          'CREATE UNIQUE INDEX post_slug_unique ON "Post" ("slug")',
-        ],
+        'postgres',
+        'psql',
+        '-U',
+        'postgres',
+        '-d',
+        'parse',
+        '-c',
+        'CREATE UNIQUE INDEX post_slug_unique ON "Post" ("slug")',
+      ],
       _ => throw ArgumentError(backend),
     });
   }
@@ -302,10 +376,10 @@ class _Capture {
       _call('POST', '/users', body: {'username': username, 'password': 'pw'});
 
   Map<String, Object?> _pointer(String className, Map<String, Object?> obj) => {
-        '__type': 'Pointer',
-        'className': className,
-        'objectId': obj['objectId']
-      };
+    '__type': 'Pointer',
+    'className': className,
+    'objectId': obj['objectId'],
+  };
 
   Future<Map<String, Object?>> _call(
     String method,
@@ -320,14 +394,17 @@ class _Capture {
     bool expectError = false,
     String? save,
   }) async {
-    final request = http.Request(
-        method, Uri.parse('$url$path').replace(queryParameters: query))
-      ..headers.addAll({
-        'X-Parse-Application-Id': appId,
-        'Content-Type': contentType,
-        if (token != null) 'X-Parse-Session-Token': token,
-        if (master) 'X-Parse-Master-Key': masterKey,
-      });
+    final request =
+        http.Request(
+            method,
+            Uri.parse('$url$path').replace(queryParameters: query),
+          )
+          ..headers.addAll({
+            'X-Parse-Application-Id': appId,
+            'Content-Type': contentType,
+            'X-Parse-Session-Token': ?token,
+            if (master) 'X-Parse-Master-Key': masterKey,
+          });
     if (body != null) request.body = jsonEncode(body);
     if (rawBody != null) request.body = rawBody;
     final response = await http.Response.fromStream(await request.send());
@@ -340,12 +417,16 @@ class _Capture {
     }
     final ok = response.statusCode >= 200 && response.statusCode < 300;
     if (!ok && !expectError) {
-      throw StateError('$backend $method $path: '
-          '${response.statusCode} ${response.body}');
+      throw StateError(
+        '$backend $method $path: '
+        '${response.statusCode} ${response.body}',
+      );
     }
     if (ok && expectError && save != null) {
-      throw StateError('$backend $method $path: expected an error, '
-          'got ${response.statusCode} ${response.body}');
+      throw StateError(
+        '$backend $method $path: expected an error, '
+        'got ${response.statusCode} ${response.body}',
+      );
     }
 
     _collectPlaceholders(decoded);
@@ -354,9 +435,8 @@ class _Capture {
         'request': {
           'method': method,
           'path': path,
-          if (query != null) 'query': query,
-          if (body != null) 'body': body,
-          if (rawBody != null) 'body': rawBody,
+          'query': ?query,
+          'body': ?(body ?? rawBody),
         },
         'status': response.statusCode,
         'response': decoded,
@@ -386,27 +466,31 @@ class _Capture {
     }
   }
 
-  void _placeholder(String real, String prefix, int digits,
-      {String suffix = ''}) {
+  void _placeholder(
+    String real,
+    String prefix,
+    int digits, {
+    String suffix = '',
+  }) {
     if (_placeholders.containsKey(real)) return;
     final n = _counters[prefix] = (_counters[prefix] ?? 0) + 1;
     _placeholders[real] = '$prefix${'$n'.padLeft(digits, '0')}$suffix';
   }
 
   Object? _normalize(Object? json) => switch (json) {
-        Map<String, Object?>() => {
-            for (final MapEntry(:key, :value)
-                in json.entries.toList()
-                  ..sort((a, b) => a.key.compareTo(b.key)))
-              _replace(key):
-                  (key == 'createdAt' || key == 'updatedAt') && value is String
-                      ? _fixedInstant
-                      : _normalize(value),
-          },
-        List<Object?>() => [for (final v in json) _normalize(v)],
-        String() => _replace(json),
-        _ => json,
-      };
+    Map<String, Object?>() => {
+      for (final MapEntry(:key, :value)
+          in json.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
+        _replace(
+          key,
+        ): (key == 'createdAt' || key == 'updatedAt') && value is String
+            ? _fixedInstant
+            : _normalize(value),
+    },
+    List<Object?>() => [for (final v in json) _normalize(v)],
+    String() => _replace(json),
+    _ => json,
+  };
 
   String _replace(String s) {
     for (final MapEntry(:key, :value) in _placeholders.entries) {

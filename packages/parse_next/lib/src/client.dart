@@ -20,8 +20,8 @@ final class ParseClient {
     this.clientKey,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
-  })  : _http = httpClient ?? http.Client(),
-        _ownsHttp = httpClient == null;
+  }) : _http = httpClient ?? http.Client(),
+       _ownsHttp = httpClient == null;
 
   final Uri server;
   final String appId;
@@ -109,7 +109,10 @@ Future<Json> request(
     throw OtherParseError(text, code: null, status: status);
   }
 
-  final code = switch (decoded['code']) { final num n => n.toInt(), _ => null };
+  final code = switch (decoded['code']) {
+    final num n => n.toInt(),
+    _ => null,
+  };
   // Uncaught server errors put the text under `message`, not `error`
   // (middlewares.js handleParseErrors).
   final message = switch (decoded) {
