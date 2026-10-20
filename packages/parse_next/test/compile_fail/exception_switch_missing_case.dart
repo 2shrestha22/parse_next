@@ -7,6 +7,9 @@ String name(ParseException e) => switch (e) {
   DuplicateValue() => '137',
   ScriptFailed() => '141',
   InvalidSession() => '209',
+  InvalidCredentials() => 'credentials',
+  UsernameTaken() => '202',
+  EmailTaken() => '203',
   Unauthorized() => 'unauthorized',
   NetworkError() => 'network',
 };

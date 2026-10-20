@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'codec.dart';
 import 'exception.dart';
 
+part 'auth.dart';
 part 'collection.dart';
 part 'query.dart';
 
@@ -14,14 +15,23 @@ final class ParseClient {
   ///
   /// An [httpClient] passed here stays owned by the caller, and [close] leaves
   /// it open. Without one, [ParseClient] creates its own and [close] closes it.
+  ///
+  /// [sessions] is read once, on the first request or [Auth] call, not here;
+  /// a value written to it by anything but this client after that is not
+  /// seen. Every request then carries the session token while one exists.
+  /// Without a store, the session lasts as long as this client. When a write
+  /// to [sessions] fails, the error reaches the caller but this client keeps
+  /// the new session in memory.
   ParseClient({
     required this.server,
     required this.appId,
     this.clientKey,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
+    SessionStore? sessions,
   }) : _http = httpClient ?? http.Client(),
-       _ownsHttp = httpClient == null;
+       _ownsHttp = httpClient == null,
+       _sessions = sessions ?? InMemorySessionStore();
 
   final Uri server;
   final String appId;
@@ -34,16 +44,71 @@ final class ParseClient {
 
   final http.Client _http;
   final bool _ownsHttp;
+  final SessionStore _sessions;
+  _Session? _current;
+  bool _loaded = false;
+  Future<void>? _loading;
+  final _changes = StreamController<_Session?>.broadcast();
 
   Collection<T, F, O> collection<T, F, O>(ParseSchema<T, F, O> schema) =>
       Collection._(this, schema);
 
+  /// [schema] is the app's `@ParseClass('_User')` model.
+  Auth<U> auth<U>(ParseSchema<U, Object?, Object?> schema) =>
+      Auth._(this, schema);
+
   void close() {
+    _changes.close();
     if (_ownsHttp) _http.close();
+  }
+
+  Future<_Session?> _session() async {
+    if (!_loaded) {
+      final loading = _loading ??= _read();
+      try {
+        await loading;
+      } on Object {
+        // A failed read is not kept, so a transient store error is retried.
+        if (identical(_loading, loading)) _loading = null;
+        rethrow;
+      }
+    }
+    return _current;
+  }
+
+  Future<void> _read() async {
+    final raw = await _sessions.read();
+    // A session set while the read was in flight is newer than the store.
+    if (_loaded) return;
+    _current = raw == null ? null : _Session.parse(raw);
+    _loaded = true;
+  }
+
+  /// [_current] changes before the store is awaited, so a second 209
+  /// arriving meanwhile already sees the session gone and emits nothing.
+  Future<void> _setSession(_Session? session, {bool emit = true}) async {
+    _current = session;
+    _loaded = true;
+    if (emit && !_changes.isClosed) _changes.add(session);
+    if (session == null) {
+      await _sessions.clear();
+    } else {
+      await _sessions.write(session.encode());
+    }
+  }
+
+  /// Only when [token] is still the stored one: a 209 for a token given to
+  /// `become`, or one already logged out, leaves the current session alone.
+  Future<void> _invalidate(String token) async {
+    await _session();
+    if (_current?.token == token) await _setSession(null);
   }
 }
 
 /// [path] starts with `/` and is relative to [ParseClient.server].
+///
+/// Sends [sessionToken], or the stored session's when it is null and
+/// [stored] is true.
 Future<Json> request(
   ParseClient client,
   String method,
@@ -51,7 +116,11 @@ Future<Json> request(
   Map<String, String>? query,
   Json? body,
   String? sessionToken,
+  bool stored = true,
 }) async {
+  if (sessionToken == null && stored) {
+    sessionToken = (await client._session())?.token;
+  }
   final base = client.server.path.endsWith('/')
       ? client.server.path.substring(0, client.server.path.length - 1)
       : client.server.path;
@@ -119,10 +188,16 @@ Future<Json> request(
     {'error': final String m} || {'message': final String m} => m,
     _ => text,
   };
+  if (code == 209 && sessionToken != null) {
+    await client._invalidate(sessionToken);
+  }
   throw switch (code) {
+    101 when path == '/login' => InvalidCredentials(message, status: status),
     101 => ObjectNotFound(message, status: status),
     137 => DuplicateValue(message, status: status),
     141 => ScriptFailed(message, status: status),
+    202 => UsernameTaken(message, status: status),
+    203 => EmailTaken(message, status: status),
     209 => InvalidSession(message, status: status),
     null when status == 403 => Unauthorized(message, status: status),
     _ => OtherParseError(message, code: code, status: status),

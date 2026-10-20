@@ -90,6 +90,12 @@ Later phases must follow these:
 | Only the Mongo adapter reads `$maxDistanceInKilometers`; Postgres reads only `$maxDistance` in radians, so `near` sends radians. In `$geoWithin.$polygon`, both adapters read a Polygon value's coordinates as `[longitude, latitude]`, so `withinPolygon` sends GeoPoints. | Phase 4 |
 | On Mongo, `$nearSphere` inside `$or` (`geo $near must be top-level expr`), `$text` inside `$or`, and `$text` with `$nearSphere` in one query (`text and geoNear not allowed in same query`) are all 500s. Postgres accepts all three. | Phase 4 |
 | On Mongo, only `find` creates the text index (`createTextIndexesIfNeeded` in `MongoStorageAdapter.js`), so a `$text` count before the first find is a 500 (`text index required`). A collection has one text index, and `$text` searches it whatever the field. On Postgres a multi-word `$text` term is a 500 (`to_tsquery` syntax). | Phase 4 |
+| `X-Parse-Revocable-Session` is read nowhere (it appears only in the CORS allow list in `middlewares.js`), and every token from sign-up, login and `/users/me` is an `r:` revocable token. Sign-up does not send the header. | Phase 6 |
+| A wrong username or password on `/login` is 101, HTTP 404, `Invalid username/password.` (`UsersRouter.js`), the same code as a missing object, so `InvalidCredentials` is mapped only for `/login`. A taken username is 202 and a taken email 203, both HTTP 400. | Phase 6 |
+| Any request carrying an invalid session token fails with 209 before routing, except `/login`, which drops the token (`handleParseHeaders` in `middlewares.js`). Sign-up, login, become and password reset never send the stored token. `/logout` with a revoked token is also 209. | Phase 6 |
+| The sign-up response is only `objectId`, `createdAt` and `sessionToken`: no `ACL`, no `updatedAt`. Login and `/users/me` return the whole user with its `ACL` and `sessionToken`. | Phase 6 |
+| Password reset fails with 1 unless the server has an email adapter, `appName` and `publicServerURL` (`_throwOnBadEmailConfig` in `UsersRouter.js`). An unknown email gets the same `{}` as a known one while `passwordPolicy.resetPasswordSuccessOnInvalidEmail` is unset (default true). Once `publicServerURL` is set it also replaces the request host in file URLs (`mount` in `Config.js`), so Compose sets each server's own host URL. | Phase 6, 8 |
+| Deleting a `_Session` with the master key also evicts its token from the server's user cache (`del` in `rest.js`), so the revoked token fails on its very next request. | Phase 6 |
 
 ## Repo layout
 
@@ -260,6 +266,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 **Rules**
 - The token lives only in `SessionStore` and never in a model.
 - Sign-up sends `X-Parse-Revocable-Session: 1`.
+  - Not sent: parse-server reads the header nowhere and every session is already revocable (see the table above).
 - A 209 error clears the store, emits `null` on `changes`, and is still thrown to the caller. Nothing is swallowed.
 
 **Verify (integration)**

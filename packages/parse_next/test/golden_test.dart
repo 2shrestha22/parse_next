@@ -14,9 +14,12 @@ const covered = {
   'create_all_fields.json',
   'create_null_fields.json',
   'error_101_acl_denied.json',
+  'error_101_invalid_credentials.json',
   'error_101_missing.json',
   'error_137_duplicate.json',
   'error_141_script_failed.json',
+  'error_202_username_taken.json',
+  'error_203_email_taken.json',
   'error_209_invalid_session.json',
   'error_unauthorized.json',
   'file_upload.json',
@@ -37,6 +40,9 @@ const covered = {
   'query_all_fields.json',
   'query_include.json',
   'query_related_to.json',
+  'user_log_in.json',
+  'user_me.json',
+  'user_sign_up.json',
 };
 
 Map<String, Object?> fixture(String name) {
@@ -273,6 +279,13 @@ void main() {
             .having((e) => e.message, 'message', 'Object not found.'),
       ),
       (
+        'error_101_invalid_credentials.json',
+        isA<InvalidCredentials>()
+            .having((e) => e.code, 'code', 101)
+            .having((e) => e.status, 'status', 404)
+            .having((e) => e.message, 'message', 'Invalid username/password.'),
+      ),
+      (
         'error_101_missing.json',
         isA<ObjectNotFound>()
             .having((e) => e.code, 'code', 101)
@@ -296,6 +309,28 @@ void main() {
             .having((e) => e.code, 'code', 141)
             .having((e) => e.status, 'status', 400)
             .having((e) => e.message, 'message', 'fail was called'),
+      ),
+      (
+        'error_202_username_taken.json',
+        isA<UsernameTaken>()
+            .having((e) => e.code, 'code', 202)
+            .having((e) => e.status, 'status', 400)
+            .having(
+              (e) => e.message,
+              'message',
+              'Account already exists for this username.',
+            ),
+      ),
+      (
+        'error_203_email_taken.json',
+        isA<EmailTaken>()
+            .having((e) => e.code, 'code', 203)
+            .having((e) => e.status, 'status', 400)
+            .having(
+              (e) => e.message,
+              'message',
+              'Account already exists for this email address.',
+            ),
       ),
       (
         'error_209_invalid_session.json',
@@ -343,5 +378,68 @@ void main() {
         );
       });
     }
+  });
+
+  group('auth', () {
+    Future<(Doc<Member>, http.Request)> replay(
+      String name,
+      Future<Doc<Member>> Function(Auth<Member> auth) call,
+    ) async {
+      final f = fixture(name);
+      final sent = <http.Request>[];
+      final client = ParseClient(
+        server: Uri.parse('http://parse.test/parse'),
+        appId: 'parse-next-it',
+        httpClient: MockClient((r) async {
+          sent.add(r);
+          return http.Response(jsonEncode(f['response']), f['status']! as int);
+        }),
+      );
+      final doc = await call(client.auth(memberSchema));
+      final req = f['request']! as Map<String, Object?>;
+      final only = sent.single;
+      expect(only.method, req['method']);
+      expect(only.url.path, '/parse${req['path']}');
+      expect(only.body.isEmpty ? null : jsonDecode(only.body), req['body']);
+      return (doc, only);
+    }
+
+    test('user_sign_up.json', () async {
+      final (doc, _) = await replay(
+        'user_sign_up.json',
+        (a) => a.signUp(
+          password: 'pw',
+          user: const Member(username: 'carol', email: 'carol@example.test'),
+        ),
+      );
+      expect(doc.id, 'obj0000007');
+      expect(doc.createdAt, epoch);
+      expect(doc.updatedAt, epoch);
+      expect(doc.acl, isNull);
+      expect(doc.data.email, 'carol@example.test');
+      expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
+      expect(doc.data.decodedKeys, isNot(contains('password')));
+    });
+
+    test('user_log_in.json', () async {
+      final (doc, _) = await replay(
+        'user_log_in.json',
+        (a) => a.logIn('carol', 'pw'),
+      );
+      expect(doc.id, 'obj0000007');
+      expect(doc.data.username, 'carol');
+      expect(doc.acl, const Acl().withUser('obj0000007', write: true));
+      expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
+    });
+
+    test('user_me.json', () async {
+      final (doc, req) = await replay(
+        'user_me.json',
+        (a) => a.become('r:session0004'),
+      );
+      expect(req.headers['X-Parse-Session-Token'], 'r:session0004');
+      expect(doc.id, 'obj0000007');
+      expect(doc.data.decodedKeys, isNot(contains('sessionToken')));
+    });
   });
 }

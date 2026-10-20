@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "email": "carol@example.test",
+      "password": "pw",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "objectId": "obj0000007",
+    "sessionToken": "r:session0003"
+  },
+  "status": 201
+}

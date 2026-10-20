@@ -14,20 +14,11 @@ final class Collection<T, F, O> {
   /// [Doc.createdAt], since the create response carries no `updatedAt`.
   Future<Doc<T>> create(T value, {Acl? acl}) async {
     final body = Json({
-      // Not sent as null: on Mongo a stored null Polygon makes every later
-      // read of the object a 500 (PolygonCoder in MongoTransform.js).
-      for (final MapEntry(:key, value: v) in _schema.encode(value).entries)
-        key: ?v,
+      ..._withoutNulls(_schema.encode(value)),
       if (acl != null) 'ACL': acl.toJson(),
     });
     final response = await request(_client, 'POST', _path, body: body);
-    final stored = {...body, ...response, 'updatedAt': response['createdAt']}
-      // A field the trigger unset comes back as a Delete op
-      // (`_updateResponseWithData` in parse-server's RestWrite.js).
-      ..removeWhere(
-        (_, v) => v is Map<String, Object?> && v['__op'] == 'Delete',
-      );
-    return Doc.decode(Json(stored), _schema);
+    return Doc.decode(_created(body, response), _schema);
   }
 
   Query<T, F, O> query() => Query._(this);
@@ -71,6 +62,20 @@ final class Collection<T, F, O> {
     await request(_client, 'DELETE', _object(id));
   }
 }
+
+/// Not sent as null: on Mongo a stored null Polygon makes every later read of
+/// the object a 500 (PolygonCoder in MongoTransform.js).
+Json _withoutNulls(Json encoded) =>
+    Json({for (final MapEntry(:key, value: v) in encoded.entries) key: ?v});
+
+/// The object a create stored, from what was [sent] and the [response],
+/// which has no `updatedAt`.
+Json _created(Json sent, Json response) => Json(
+  {...sent, ...response, 'updatedAt': response['createdAt']}
+    // A field a beforeSave trigger unset comes back as a Delete op
+    // (`_updateResponseWithData` in parse-server's RestWrite.js).
+    ..removeWhere((_, v) => v is Map<String, Object?> && v['__op'] == 'Delete'),
+);
 
 /// One field change for [Collection.update], built from a schema's ops.
 final class Op {

@@ -286,6 +286,46 @@ class _Capture {
       save: 'error_unauthorized',
     );
 
+    const carol = {
+      'username': 'carol',
+      'password': 'pw',
+      'email': 'carol@example.test',
+    };
+    await _call('POST', '/users', body: carol, save: 'user_sign_up');
+    final login = await _call(
+      'POST',
+      '/login',
+      body: {'username': 'carol', 'password': 'pw'},
+      save: 'user_log_in',
+    );
+    await _call(
+      'GET',
+      '/users/me',
+      token: login['sessionToken']! as String,
+      save: 'user_me',
+    );
+    await _call(
+      'POST',
+      '/login',
+      body: {'username': 'carol', 'password': 'wrong'},
+      expectError: true,
+      save: 'error_101_invalid_credentials',
+    );
+    await _call(
+      'POST',
+      '/users',
+      body: {...carol, 'email': 'other@example.test'},
+      expectError: true,
+      save: 'error_202_username_taken',
+    );
+    await _call(
+      'POST',
+      '/users',
+      body: {...carol, 'username': 'dave'},
+      expectError: true,
+      save: 'error_203_email_taken',
+    );
+
     return _fixtures;
   }
 

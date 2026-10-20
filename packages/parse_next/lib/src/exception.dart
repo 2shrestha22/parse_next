@@ -56,6 +56,9 @@ final class ScriptFailed extends ParseException {
   String toString() => 'ScriptFailed ($code, HTTP $status): $message';
 }
 
+/// The session token was revoked, expired or never existed. When the
+/// request carried the client's stored session, that session is already
+/// cleared and `Auth.changes` has emitted null by the time this is thrown.
 final class InvalidSession extends ParseException {
   const InvalidSession(this.message, {required this.status});
 
@@ -66,6 +69,44 @@ final class InvalidSession extends ParseException {
 
   @override
   String toString() => 'InvalidSession ($code, HTTP $status): $message';
+}
+
+/// `/login` found no user with that username and password. The server
+/// answers with 101, which on every other route is [ObjectNotFound].
+final class InvalidCredentials extends ParseException {
+  const InvalidCredentials(this.message, {required this.status});
+
+  int get code => 101;
+  @override
+  final String message;
+  final int status;
+
+  @override
+  String toString() => 'InvalidCredentials ($code, HTTP $status): $message';
+}
+
+final class UsernameTaken extends ParseException {
+  const UsernameTaken(this.message, {required this.status});
+
+  int get code => 202;
+  @override
+  final String message;
+  final int status;
+
+  @override
+  String toString() => 'UsernameTaken ($code, HTTP $status): $message';
+}
+
+final class EmailTaken extends ParseException {
+  const EmailTaken(this.message, {required this.status});
+
+  int get code => 203;
+  @override
+  final String message;
+  final int status;
+
+  @override
+  String toString() => 'EmailTaken ($code, HTTP $status): $message';
 }
 
 /// The server rejected the application id or key with a 403 that has no

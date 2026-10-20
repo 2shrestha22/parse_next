@@ -151,6 +151,23 @@ const fixtures = <String, String>{
   "status": 404
 }
 ''',
+  'error_101_invalid_credentials.json': r'''
+{
+  "request": {
+    "body": {
+      "password": "wrong",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/login"
+  },
+  "response": {
+    "code": 101,
+    "error": "Invalid username/password."
+  },
+  "status": 404
+}
+''',
   'error_101_missing.json': r'''
 {
   "request": {
@@ -190,6 +207,42 @@ const fixtures = <String, String>{
   "response": {
     "code": 141,
     "error": "fail was called"
+  },
+  "status": 400
+}
+''',
+  'error_202_username_taken.json': r'''
+{
+  "request": {
+    "body": {
+      "email": "other@example.test",
+      "password": "pw",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "code": 202,
+    "error": "Account already exists for this username."
+  },
+  "status": 400
+}
+''',
+  'error_203_email_taken.json': r'''
+{
+  "request": {
+    "body": {
+      "email": "carol@example.test",
+      "password": "pw",
+      "username": "dave"
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "code": 203,
+    "error": "Account already exists for this email address."
   },
   "status": 400
 }
@@ -1110,6 +1163,75 @@ const fixtures = <String, String>{
     ]
   },
   "status": 200
+}
+''',
+  'user_log_in.json': r'''
+{
+  "request": {
+    "body": {
+      "password": "pw",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/login"
+  },
+  "response": {
+    "ACL": {
+      "obj0000007": {
+        "read": true,
+        "write": true
+      }
+    },
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "email": "carol@example.test",
+    "objectId": "obj0000007",
+    "sessionToken": "r:session0004",
+    "updatedAt": "2000-01-01T00:00:00.000Z",
+    "username": "carol"
+  },
+  "status": 200
+}
+''',
+  'user_me.json': r'''
+{
+  "request": {
+    "method": "GET",
+    "path": "/users/me"
+  },
+  "response": {
+    "ACL": {
+      "obj0000007": {
+        "read": true,
+        "write": true
+      }
+    },
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "email": "carol@example.test",
+    "objectId": "obj0000007",
+    "sessionToken": "r:session0004",
+    "updatedAt": "2000-01-01T00:00:00.000Z",
+    "username": "carol"
+  },
+  "status": 200
+}
+''',
+  'user_sign_up.json': r'''
+{
+  "request": {
+    "body": {
+      "email": "carol@example.test",
+      "password": "pw",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "objectId": "obj0000007",
+    "sessionToken": "r:session0003"
+  },
+  "status": 201
 }
 ''',
 };

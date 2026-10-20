@@ -1,0 +1,16 @@
+{
+  "request": {
+    "body": {
+      "email": "other@example.test",
+      "password": "pw",
+      "username": "carol"
+    },
+    "method": "POST",
+    "path": "/users"
+  },
+  "response": {
+    "code": 202,
+    "error": "Account already exists for this username."
+  },
+  "status": 400
+}

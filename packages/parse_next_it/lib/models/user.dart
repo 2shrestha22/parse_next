@@ -8,9 +8,11 @@ final class User {
     required this.username,
     @ParseKey('display_name') this.displayName,
     this.karma,
+    this.email,
   });
 
   final String username;
   final String? displayName;
   final int? karma;
+  final String? email;
 }

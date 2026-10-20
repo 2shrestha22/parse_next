@@ -77,6 +77,7 @@ void main() {
     late Pointer<User> alice;
     late Pointer<User> bob;
     late String aliceToken;
+    late String bobToken;
 
     setUpAll(() async {
       Map<String, String> type(String t) => {'type': t};
@@ -121,6 +122,7 @@ void main() {
       alice = Pointer(a.id);
       bob = Pointer(b.id);
       aliceToken = a.token;
+      bobToken = b.token;
     });
 
     tearDownAll(() => client.close());
@@ -426,33 +428,46 @@ void main() {
         },
       );
 
-      test(
-        'an update the ACL denies is ObjectNotFound (101), not 403',
-        () async {
-          final r = await backend.rest(
-            'POST',
-            '/classes/Post',
-            token: aliceToken,
-            body: {
-              ...wire(minimal(alice))..removeWhere((_, v) => v == null),
-              'ACL': {
-                alice.id: {'read': true, 'write': true},
-              },
-            },
-          );
-          final id = r['objectId']! as String;
+      group('an update the ACL denies is ObjectNotFound (101), not 403', () {
+        late String id;
+
+        setUp(() async {
+          final asAlice = backend.client();
+          addTearDown(asAlice.close);
+          await asAlice.auth(const $UserSchema()).become(aliceToken);
+          id =
+              (await asAlice
+                      .collection(postSchema)
+                      .create(
+                        minimal(alice),
+                        acl: const Acl().withUser(alice.id, write: true),
+                      ))
+                  .id;
+        });
+
+        Future<void> deniedFor(ParseClient caller) async {
           await expectLater(
-            posts.update(id, (o) => [o.title.set('mine')]),
+            caller
+                .collection(postSchema)
+                .update(id, (o) => [o.title.set('mine')]),
             throwsA(
               isA<ObjectNotFound>()
                   .having((e) => e.code, 'code', 101)
                   .having((e) => e.status, 'status', 404),
             ),
           );
-          final stored = await raw(id);
-          expect(stored['title'], 't');
-        },
-      );
+          expect((await raw(id))['title'], 't');
+        }
+
+        test('logged in as another user', () async {
+          final asBob = backend.client();
+          addTearDown(asBob.close);
+          await asBob.auth(const $UserSchema()).become(bobToken);
+          await deniedFor(asBob);
+        });
+
+        test('anonymous', () => deniedFor(client));
+      });
 
       test('a wrong app id is Unauthorized', () async {
         final wrong = backend.client(appId: 'wrong-app-id');

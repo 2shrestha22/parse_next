@@ -6,3 +6,5 @@ Parse.Cloud.beforeSave('Note', request => {
   request.object.set('text', request.object.get('text').toUpperCase());
   request.object.unset('draft');
 });
+
+Parse.Cloud.define('sentMail', () => require('./email.js').sent);

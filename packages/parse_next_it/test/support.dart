@@ -19,8 +19,16 @@ final class Backend {
 
   bool get isPostgres => name == 'postgres';
 
-  ParseClient client({String appId = appId}) =>
-      ParseClient(server: Uri.parse(url), appId: appId);
+  ParseClient client({
+    String appId = appId,
+    SessionStore? sessions,
+    http.Client? httpClient,
+  }) => ParseClient(
+    server: Uri.parse(url),
+    appId: appId,
+    sessions: sessions,
+    httpClient: httpClient,
+  );
 
   Future<Map<String, Object?>> rest(
     String method,

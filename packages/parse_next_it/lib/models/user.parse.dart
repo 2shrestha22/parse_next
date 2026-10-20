@@ -9,6 +9,7 @@ final class UserFields extends Fields<User> {
   StringField<User> get username => const StringField('username');
   StringField<User> get displayName => const StringField('display_name');
   ComparableField<User, int> get karma => const ComparableField('karma');
+  StringField<User> get email => const StringField('email');
 }
 
 final class UserOps {
@@ -18,6 +19,7 @@ final class UserOps {
   NullableSetOps<String> get displayName =>
       const NullableSetOps('display_name');
   NullableNumOps<int> get karma => const NullableNumOps('karma');
+  NullableSetOps<String> get email => const NullableSetOps('email');
 }
 
 final class $UserSchema implements ParseSchema<User, UserFields, UserOps> {
@@ -31,6 +33,7 @@ final class $UserSchema implements ParseSchema<User, UserFields, UserOps> {
     username: json.require<String>('username'),
     displayName: json.opt<String>('display_name'),
     karma: json.opt<int>('karma'),
+    email: json.opt<String>('email'),
   );
 
   @override
@@ -38,6 +41,7 @@ final class $UserSchema implements ParseSchema<User, UserFields, UserOps> {
     'username': value.username,
     'display_name': value.displayName,
     'karma': value.karma,
+    'email': value.email,
   });
 
   @override

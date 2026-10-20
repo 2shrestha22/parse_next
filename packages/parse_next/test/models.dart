@@ -214,3 +214,48 @@ const postSchema = PostSchema();
 
 Object? _map<V extends Object>(V? v, Object? Function(V) encode) =>
     v == null ? null : encode(v);
+
+final class Member {
+  const Member({required this.username, this.email, this.decodedKeys});
+
+  final String username;
+  final String? email;
+
+  /// The keys decode was given; null on a value built by hand.
+  final Set<String>? decodedKeys;
+}
+
+final class MemberFields extends Fields<Member> {
+  const MemberFields();
+}
+
+final class MemberOps {
+  const MemberOps();
+}
+
+final class MemberSchema
+    implements ParseSchema<Member, MemberFields, MemberOps> {
+  const MemberSchema();
+
+  @override
+  String get className => '_User';
+
+  @override
+  Member decode(Json json) => Member(
+    username: json.require<String>('username'),
+    email: json.opt<String>('email'),
+    decodedKeys: json.keys.toSet(),
+  );
+
+  @override
+  Json encode(Member value) =>
+      Json({'username': value.username, 'email': value.email});
+
+  @override
+  MemberFields get fields => const MemberFields();
+
+  @override
+  MemberOps get ops => const MemberOps();
+}
+
+const memberSchema = MemberSchema();

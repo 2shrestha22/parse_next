@@ -18,6 +18,10 @@ x-parse: &parse
     PARSE_SERVER_CLOUD: /parse-server/cloud/main.js
     PARSE_SERVER_START_LIVE_QUERY_SERVER: "true"
     PARSE_SERVER_LIVE_QUERY: '{"classNames":["Post"]}'
+    # Password reset fails with 1 without all three (`_throwOnBadEmailConfig`
+    # in UsersRouter.js).
+    PARSE_SERVER_APP_NAME: parse-next-it
+    PARSE_SERVER_EMAIL_ADAPTER: /parse-server/cloud/email.js
 
 services:
   mongo:
@@ -47,6 +51,9 @@ services:
     environment:
       <<: *parse-env
       PARSE_SERVER_DATABASE_URI: mongodb://mongo:27017/parse
+      # The host's address for this server: once set, it also replaces the
+      # request host in file URLs (`mount` in Config.js).
+      PARSE_PUBLIC_SERVER_URL: http://localhost:1337/parse
     depends_on:
       mongo: { condition: service_healthy }
 
@@ -56,6 +63,7 @@ services:
     environment:
       <<: *parse-env
       PARSE_SERVER_DATABASE_URI: postgres://postgres:postgres@postgres:5432/parse
+      PARSE_PUBLIC_SERVER_URL: http://localhost:1338/parse
       # The default GridFS files adapter needs MongoDB.
       PARSE_SERVER_FILES_ADAPTER: "@parse/fs-files-adapter"
     tmpfs: ["/parse-server/files:mode=1777"]
