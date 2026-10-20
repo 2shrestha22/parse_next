@@ -7,6 +7,7 @@ import 'codec.dart';
 import 'exception.dart';
 
 part 'collection.dart';
+part 'query.dart';
 
 final class ParseClient {
   /// [server] is the mount point, such as `https://example.com/parse`.
@@ -34,7 +35,7 @@ final class ParseClient {
   final http.Client _http;
   final bool _ownsHttp;
 
-  Collection<T, O> collection<T, O>(ParseSchema<T, O> schema) =>
+  Collection<T, F, O> collection<T, F, O>(ParseSchema<T, F, O> schema) =>
       Collection._(this, schema);
 
   void close() {

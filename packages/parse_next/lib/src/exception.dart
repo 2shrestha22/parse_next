@@ -86,6 +86,11 @@ final class Unauthorized extends ParseException {
 /// The request may still have reached the server, so a write may have been
 /// applied. The SDK never retries; decide yourself whether repeating the
 /// call is safe.
+///
+/// Also raised for the call right after a 500 `Internal server error.`:
+/// parse-server destroys that keep-alive socket after responding
+/// (`handleParseErrors` in middlewares.js), so the next request on it fails
+/// before reaching the server.
 final class NetworkError extends ParseException {
   const NetworkError(this.message);
 

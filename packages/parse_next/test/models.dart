@@ -7,13 +7,20 @@ final class Author {
   final String name;
 }
 
+final class AuthorFields extends Fields<Author> {
+  const AuthorFields();
+
+  StringField<Author> get name => const StringField('name');
+}
+
 final class AuthorOps {
   const AuthorOps();
 
   SetOps<String> get name => const SetOps('name');
 }
 
-final class AuthorSchema implements ParseSchema<Author, AuthorOps> {
+final class AuthorSchema
+    implements ParseSchema<Author, AuthorFields, AuthorOps> {
   const AuthorSchema();
 
   @override
@@ -24,6 +31,9 @@ final class AuthorSchema implements ParseSchema<Author, AuthorOps> {
 
   @override
   Json encode(Author value) => Json({'name': value.name});
+
+  @override
+  AuthorFields get fields => const AuthorFields();
 
   @override
   AuthorOps get ops => const AuthorOps();
@@ -91,6 +101,32 @@ final class Post {
       };
 }
 
+final class PostFields extends Fields<Post> {
+  const PostFields();
+
+  StringField<Post> get title => const StringField('title');
+  StringField<Post> get slug => const StringField('slug');
+  StringField<Post> get status => const StringField('status');
+  ComparableField<Post, int> get count => const ComparableField('count');
+  ComparableField<Post, double> get ratio => const ComparableField('ratio');
+  ComparableField<Post, double> get score => const ComparableField('score');
+  Field<Post, bool> get published => const Field('published');
+  ComparableField<Post, DateTime> get publishedAt =>
+      const ComparableField('publishedAt', encodeDate);
+  ListField<Post, String> get tags => const ListField('tags');
+  ExistsField<Post> get meta => const ExistsField('meta');
+  GeoField<Post> get location => const GeoField('location');
+  ExistsField<Post> get area => const ExistsField('area');
+  ExistsField<Post> get attachment => const ExistsField('attachment');
+  ExistsField<Post> get data => const ExistsField('data');
+  PointerField<Post, Author> get author =>
+      const PointerField('author', authorSchema);
+  PointerListField<Post, Author> get coauthors =>
+      PointerListField('coauthors', authorSchema);
+  RelationField<Post, Author> get followers =>
+      const RelationField('followers', postSchema);
+}
+
 final class PostOps {
   const PostOps();
 
@@ -120,7 +156,7 @@ final class PostOps {
       const RelationOps('followers', authorSchema);
 }
 
-final class PostSchema implements ParseSchema<Post, PostOps> {
+final class PostSchema implements ParseSchema<Post, PostFields, PostOps> {
   const PostSchema();
 
   @override
@@ -167,6 +203,9 @@ final class PostSchema implements ParseSchema<Post, PostOps> {
         'coauthors':
             value.coauthors?.map((p) => p.encode(authorSchema)).toList(),
       });
+
+  @override
+  PostFields get fields => const PostFields();
 
   @override
   PostOps get ops => const PostOps();

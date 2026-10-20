@@ -82,6 +82,14 @@ Later phases must follow these:
 | A create returns only `objectId` and `createdAt`, not `updatedAt`; a GET straight after has both. | Phase 3 |
 | The file upload response is `{name, url}` without `__type`, unlike a File field. | Phase 8 |
 | An uncaught internal error is 500 `{"code":1,"message":…}`: the text is under `message`, not `error` (`handleParseErrors` in `middlewares.js`). Any other 403 without a `code`, such as `unauthorized: master key is required`, is also sent with `res.end` and no `Content-Type`; every 403 without a code maps to `Unauthorized`. | Phase 2 |
+| After that uncaught 500, `handleParseErrors` calls `next(err)` and Express's `finalhandler` destroys the socket. The next request on the same pooled keep-alive connection fails with `Connection closed before full header was received` (a `NetworkError`), and that request never reaches the server. Only this uncaught-error path does it; the `"An internal server error occurred"` 500 keeps the socket. Decision: document it on `NetworkError`, no transport change. Turning off keep-alive would cost a new TCP/TLS connection per request to work around a server bug. | Phase 2 |
+| A date constraint with a plain ISO string matches nothing on Mongo but is cast to a date and matches on Postgres. Queries always send `{"__type":"Date"}`. | Phase 4 |
+| `$nin` never matches an absent field on Postgres (`NOT IN`), but does on Mongo. `$in: []` matches absent fields on Postgres (`IS NULL`) and nothing on Mongo, so `oneOf([])` throws `ArgumentError` (`buildWhereClause` in `PostgresStorageAdapter.js`). | Phase 4 |
+| Ascending sorts put absent values first on Mongo and last on Postgres. Strings compare and sort by the database collation: binary on Mongo, `en_US.utf8` on Postgres (`"Banana" > "b"` there). The oracle uses lowercase a–f names, where both orders agree. | Phase 4 |
+| Equality on an array field (`{"tags":"a"}`) is a 500 on Postgres, so `contains` sends `$all`. | Phase 4 |
+| Only the Mongo adapter reads `$maxDistanceInKilometers`; Postgres reads only `$maxDistance` in radians, so `near` sends radians. In `$geoWithin.$polygon`, both adapters read a Polygon value's coordinates as `[longitude, latitude]`, so `withinPolygon` sends GeoPoints. | Phase 4 |
+| On Mongo, `$nearSphere` inside `$or` (`geo $near must be top-level expr`), `$text` inside `$or`, and `$text` with `$nearSphere` in one query (`text and geoNear not allowed in same query`) are all 500s. Postgres accepts all three. | Phase 4 |
+| On Mongo, only `find` creates the text index (`createTextIndexesIfNeeded` in `MongoStorageAdapter.js`), so a `$text` count before the first find is a 500 (`text index required`). A collection has one text index, and `$text` searches it whatever the field. On Postgres a multi-word `$text` term is a 500 (`to_tsquery` syntax). | Phase 4 |
 
 ## Repo layout
 
@@ -215,6 +223,7 @@ parse_next/                     pub workspace (Dart ≥ 3.6)
 - `stream()` over 1,050 objects (past the default limit of 100) returns no duplicates and no gaps.
 - `include`: `loaded` is non-null when included and null otherwise.
 - Date regression: `createdAt.gt(t)` returns the right rows. A raw-JSON test with a plain ISO string returns zero rows, which documents why the encoding matters.
+  - Zero rows only on Mongo. Postgres casts the string and matches, so the test asserts every row there (see the table above).
 - Compile-fail: `gt` with the wrong type, `startsWith` on a List, `include` on a non-pointer field, `matchesQuery` with a query on a different class.
 
 **Exit:** the oracle suite is green on both databases.

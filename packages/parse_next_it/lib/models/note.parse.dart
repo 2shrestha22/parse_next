@@ -1,5 +1,13 @@
 part of 'note.dart';
 
+final class NoteFields extends Fields<Note> {
+  const NoteFields();
+
+  StringField<Note> get text => const StringField('text');
+  Field<Note, bool> get draft => const Field('draft');
+  GeoField<Note> get place => const GeoField('place');
+}
+
 final class NoteOps {
   const NoteOps();
 
@@ -9,7 +17,7 @@ final class NoteOps {
       NullableSetOps('place', (v) => v.toJson());
 }
 
-final class $NoteSchema implements ParseSchema<Note, NoteOps> {
+final class $NoteSchema implements ParseSchema<Note, NoteFields, NoteOps> {
   const $NoteSchema();
 
   @override
@@ -28,6 +36,9 @@ final class $NoteSchema implements ParseSchema<Note, NoteOps> {
         'draft': value.draft,
         'place': value.place?.toJson(),
       });
+
+  @override
+  NoteFields get fields => const NoteFields();
 
   @override
   NoteOps get ops => const NoteOps();

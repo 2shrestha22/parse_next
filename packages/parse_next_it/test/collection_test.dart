@@ -73,7 +73,7 @@ Post minimal(Pointer<User> a) => Post(
 void main() {
   forEachBackend((backend) {
     late ParseClient client;
-    late Collection<Post, PostOps> posts;
+    late Collection<Post, PostFields, PostOps> posts;
     late Pointer<User> alice;
     late Pointer<User> bob;
     late String aliceToken;

@@ -1,5 +1,48 @@
 part of 'post.dart';
 
+final class PostFields extends Fields<Post> {
+  const PostFields();
+
+  StringField<Post> get title => const StringField('title');
+  StringField<Post> get subtitle => const StringField('subtitle');
+  ComparableField<Post, int> get likes => const ComparableField('likes');
+  ComparableField<Post, int> get views => const ComparableField('views');
+  ComparableField<Post, double> get rating => const ComparableField('rating');
+  ComparableField<Post, double> get ratio => const ComparableField('ratio');
+  ComparableField<Post, num> get score => const ComparableField('score');
+  ComparableField<Post, num> get weight => const ComparableField('weight');
+  Field<Post, bool> get published => const Field('published');
+  Field<Post, bool> get pinned => const Field('pinned');
+  ComparableField<Post, DateTime> get publishedAt =>
+      const ComparableField('published_at', encodeDate);
+  ComparableField<Post, DateTime> get editedAt =>
+      const ComparableField('editedAt', encodeDate);
+  Field<Post, PostStatus> get status => Field('status', (v) => v.name);
+  Field<Post, PostStatus> get previousStatus =>
+      Field('previousStatus', (v) => v.name);
+  ListField<Post, String> get tags => const ListField('tags');
+  ListField<Post, int> get ranks => const ListField('ranks');
+  ExistsField<Post> get meta => const ExistsField('meta');
+  ExistsField<Post> get extra => const ExistsField('extra');
+  PointerField<Post, User> get author =>
+      const PointerField('author', $UserSchema());
+  PointerField<Post, User> get editor =>
+      const PointerField('editor', $UserSchema());
+  PointerListField<Post, User> get coauthors =>
+      PointerListField('coauthors', const $UserSchema());
+  PointerListField<Post, User> get reviewers =>
+      PointerListField('reviewers', const $UserSchema());
+  RelationField<Post, User> get followers =>
+      const RelationField('followers', $PostSchema());
+  ExistsField<Post> get cover => const ExistsField('cover');
+  ExistsField<Post> get attachment => const ExistsField('attachment');
+  GeoField<Post> get location => const GeoField('location');
+  ExistsField<Post> get area => const ExistsField('area');
+  ExistsField<Post> get zone => const ExistsField('zone');
+  ExistsField<Post> get thumbnail => const ExistsField('thumb');
+  ExistsField<Post> get data => const ExistsField('data');
+}
+
 final class PostOps {
   const PostOps();
 
@@ -45,7 +88,7 @@ final class PostOps {
       const NullableSetOps('data', encodeBytes);
 }
 
-final class $PostSchema implements ParseSchema<Post, PostOps> {
+final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
   const $PostSchema();
 
   @override
@@ -121,6 +164,9 @@ final class $PostSchema implements ParseSchema<Post, PostOps> {
         'thumb': encodeBytes(value.thumbnail),
         'data': value.data == null ? null : encodeBytes(value.data!),
       });
+
+  @override
+  PostFields get fields => const PostFields();
 
   @override
   PostOps get ops => const PostOps();

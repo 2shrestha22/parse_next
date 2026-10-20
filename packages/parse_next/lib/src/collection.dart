@@ -1,10 +1,10 @@
 part of 'client.dart';
 
-final class Collection<T, O> {
+final class Collection<T, F, O> {
   Collection._(this._client, this._schema);
 
   final ParseClient _client;
-  final ParseSchema<T, O> _schema;
+  final ParseSchema<T, F, O> _schema;
 
   String get _path => '/classes/${_schema.className}';
   String _object(String id) => '$_path/${Uri.encodeComponent(id)}';
@@ -28,6 +28,10 @@ final class Collection<T, O> {
           (_, v) => v is Map<String, Object?> && v['__op'] == 'Delete');
     return Doc.decode(Json(stored), _schema);
   }
+
+  Query<T, F, O> query() => Query._(this);
+
+  Query<T, F, O> where(Cond<T> Function(F f) build) => query().where(build);
 
   Future<Doc<T>> get(String id) async =>
       Doc.decode(await request(_client, 'GET', _object(id)), _schema);
@@ -132,7 +136,7 @@ final class RelationOps<T> {
   const RelationOps(this._key, this._schema);
 
   final String _key;
-  final ParseSchema<T, Object?> _schema;
+  final ParseSchema<T, Object?, Object?> _schema;
 
   Op add(List<Pointer<T>> targets) => _op('AddRelation', targets);
   Op remove(List<Pointer<T>> targets) => _op('RemoveRelation', targets);

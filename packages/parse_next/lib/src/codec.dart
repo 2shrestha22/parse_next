@@ -40,23 +40,25 @@ extension type const Json(Map<String, Object?> _map)
     return s == null ? null : _enum(key, s, values);
   }
 
-  Pointer<T> requirePointer<T>(String key, ParseSchema<T, Object?> schema) =>
+  Pointer<T> requirePointer<T>(
+          String key, ParseSchema<T, Object?, Object?> schema) =>
       optPointer(key, schema) ?? (throw DecodeError(key, 'missing'));
 
-  Pointer<T>? optPointer<T>(String key, ParseSchema<T, Object?> schema) {
+  Pointer<T>? optPointer<T>(
+      String key, ParseSchema<T, Object?, Object?> schema) {
     final v = this[key];
     return v == null ? null : _pointer(key, v, schema);
   }
 
   List<Pointer<T>> requirePointerList<T>(
-          String key, ParseSchema<T, Object?> schema) =>
+          String key, ParseSchema<T, Object?, Object?> schema) =>
       optPointerList(key, schema) ?? (throw DecodeError(key, 'missing'));
 
   List<Pointer<T>>? optPointerList<T>(
-          String key, ParseSchema<T, Object?> schema) =>
+          String key, ParseSchema<T, Object?, Object?> schema) =>
       _list(key, (k, v) => _pointer(k, v, schema));
 
-  Relation<T> relation<T>(String key, ParseSchema<T, Object?> schema) {
+  Relation<T> relation<T>(String key, ParseSchema<T, Object?, Object?> schema) {
     final v = this[key];
     if (v != null) {
       final j = Json(_typed(key, v, 'Relation'));
@@ -78,10 +80,12 @@ extension type const Json(Map<String, Object?> _map)
   }
 }
 
-/// A generated `$XSchema`. `O` is the typed ops object that
-/// `Collection.update` passes to its builder.
-abstract interface class ParseSchema<T, O> {
+/// A generated `$XSchema`. `F` is the typed fields object that queries pass
+/// to their builders, and `O` the typed ops object that `Collection.update`
+/// passes to its builder.
+abstract interface class ParseSchema<T, F, O> {
   String get className;
+  F get fields;
   T decode(Json json);
 
   /// Must include a null nullable field as `null`, not leave it out:
@@ -101,7 +105,7 @@ final class Doc<T> {
     required this.data,
   });
 
-  factory Doc.decode(Json json, ParseSchema<T, Object?> schema) => Doc(
+  factory Doc.decode(Json json, ParseSchema<T, Object?, Object?> schema) => Doc(
         id: json.require<String>('objectId'),
         createdAt: json.require<DateTime>('createdAt'),
         updatedAt: json.require<DateTime>('updatedAt'),
@@ -124,10 +128,11 @@ final class Pointer<T> {
 
   final String id;
 
-  /// Non-null only when the query included this field.
+  /// Non-null exactly when the query included this field and the target is
+  /// readable.
   final Doc<T>? loaded;
 
-  Map<String, Object?> encode(ParseSchema<T, Object?> schema) =>
+  Map<String, Object?> encode(ParseSchema<T, Object?, Object?> schema) =>
       {'__type': 'Pointer', 'className': schema.className, 'objectId': id};
 }
 
@@ -335,8 +340,8 @@ Map<String, Object?> _typed(String key, Object? v, String type) {
   throw DecodeError(key, 'expected __type $type, got ${_kind(v)}');
 }
 
-void _checkClass(
-    String key, String className, ParseSchema<Object?, Object?> schema) {
+void _checkClass(String key, String className,
+    ParseSchema<Object?, Object?, Object?> schema) {
   if (className != schema.className) {
     throw DecodeError(
         '$key.className', 'expected ${schema.className}, got $className');
@@ -418,7 +423,8 @@ Uint8List _bytes(String key, Object? v) {
   });
 }
 
-Pointer<T> _pointer<T>(String key, Object? v, ParseSchema<T, Object?> schema) {
+Pointer<T> _pointer<T>(
+    String key, Object? v, ParseSchema<T, Object?, Object?> schema) {
   if (v is! Map<String, Object?>) {
     throw DecodeError(key, 'expected a Pointer, got ${_kind(v)}');
   }

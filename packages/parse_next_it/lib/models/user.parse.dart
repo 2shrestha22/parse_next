@@ -1,5 +1,13 @@
 part of 'user.dart';
 
+final class UserFields extends Fields<User> {
+  const UserFields();
+
+  StringField<User> get username => const StringField('username');
+  StringField<User> get displayName => const StringField('display_name');
+  ComparableField<User, int> get karma => const ComparableField('karma');
+}
+
 final class UserOps {
   const UserOps();
 
@@ -9,7 +17,7 @@ final class UserOps {
   NullableNumOps<int> get karma => const NullableNumOps('karma');
 }
 
-final class $UserSchema implements ParseSchema<User, UserOps> {
+final class $UserSchema implements ParseSchema<User, UserFields, UserOps> {
   const $UserSchema();
 
   @override
@@ -28,6 +36,9 @@ final class $UserSchema implements ParseSchema<User, UserOps> {
         'display_name': value.displayName,
         'karma': value.karma,
       });
+
+  @override
+  UserFields get fields => const UserFields();
 
   @override
   UserOps get ops => const UserOps();
