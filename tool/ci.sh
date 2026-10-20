@@ -72,7 +72,7 @@ step "G5 unit tests"
 
 step "integration tests"
 "${compose[@]}" down -v
-trap '"${compose[@]}" down -v' EXIT
+trap 'status=$?; [ "$status" -eq 0 ] || "${compose[@]}" logs --no-color --tail 60; "${compose[@]}" down -v' EXIT
 "${compose[@]}" up -d --wait
 # live_test.dart restarts the servers, so the live files run one at a time,
 # after the rest.
