@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/classes/Post/obj0000006"
+  },
+  "response": {
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "followers": {
+      "__type": "Relation",
+      "className": "Author"
+    },
+    "objectId": "obj0000006",
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

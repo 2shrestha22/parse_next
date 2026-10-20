@@ -1,0 +1,10 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/classes/Post"
+  },
+  "response": {
+    "error": "unauthorized"
+  },
+  "status": 403
+}

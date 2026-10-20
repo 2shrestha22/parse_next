@@ -1,0 +1,12 @@
+{
+  "request": {
+    "body": "hello",
+    "method": "POST",
+    "path": "/files/hello.txt"
+  },
+  "response": {
+    "name": "file0001_hello.txt",
+    "url": "http://parse.test/parse/files/parse-next-it/file0001_hello.txt"
+  },
+  "status": 201
+}

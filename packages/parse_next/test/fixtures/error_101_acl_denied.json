@@ -1,0 +1,14 @@
+{
+  "request": {
+    "body": {
+      "count": 0
+    },
+    "method": "PUT",
+    "path": "/classes/Post/obj0000005"
+  },
+  "response": {
+    "code": 101,
+    "error": "Object not found."
+  },
+  "status": 404
+}

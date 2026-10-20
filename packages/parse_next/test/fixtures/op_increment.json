@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "count": {
+        "__op": "Increment",
+        "amount": 1
+      }
+    },
+    "method": "PUT",
+    "path": "/classes/Post/obj0000005"
+  },
+  "response": {
+    "count": 21,
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

@@ -1,0 +1,7 @@
+name: parse_next_generator
+description: Code generator for parse_next.
+version: 0.0.0
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0

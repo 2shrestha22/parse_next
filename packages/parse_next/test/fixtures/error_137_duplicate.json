@@ -1,0 +1,14 @@
+{
+  "request": {
+    "body": {
+      "slug": "hello-world"
+    },
+    "method": "POST",
+    "path": "/classes/Post"
+  },
+  "response": {
+    "code": 137,
+    "error": "A duplicate value for a field with unique values was provided"
+  },
+  "status": 400
+}

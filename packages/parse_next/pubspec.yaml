@@ -1,0 +1,10 @@
+name: parse_next
+description: A type-safe Parse SDK for Dart and Flutter, built on code generation.
+version: 0.0.0
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dev_dependencies:
+  test: ^1.26.0

@@ -1,0 +1,10 @@
+name: parse_next_it
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dev_dependencies:
+  http: ^1.6.0
+  test: ^1.26.0

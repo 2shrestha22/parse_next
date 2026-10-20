@@ -1,0 +1,25 @@
+{
+  "request": {
+    "body": {
+      "tags": {
+        "__op": "AddUnique",
+        "objects": [
+          "a",
+          "d"
+        ]
+      }
+    },
+    "method": "PUT",
+    "path": "/classes/Post/obj0000005"
+  },
+  "response": {
+    "tags": [
+      "a",
+      "b",
+      "c",
+      "d"
+    ],
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

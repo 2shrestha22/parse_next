@@ -1,0 +1,63 @@
+x-parse: &parse
+  image: parseplatform/parse-server:${PARSE_SERVER_VERSION:-9.10.5}
+  volumes:
+    - ../packages/parse_next_it/cloud:/parse-server/cloud:ro
+  healthcheck:
+    # Not localhost: inside the container it resolves to ::1, where
+    # parse-server does not listen.
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:1337/parse/health"]
+    interval: 2s
+    retries: 60
+  environment: &parse-env
+    PARSE_SERVER_APPLICATION_ID: parse-next-it
+    PARSE_SERVER_MASTER_KEY: parse-next-it-master
+    # Requests from the host arrive from the Docker bridge, which the default
+    # localhost-only allowlist rejects, so tooling could not use the master key.
+    PARSE_SERVER_MASTER_KEY_IPS: 0.0.0.0/0,::/0
+    PARSE_SERVER_URL: http://localhost:1337/parse
+    PARSE_SERVER_CLOUD: /parse-server/cloud/main.js
+    PARSE_SERVER_START_LIVE_QUERY_SERVER: "true"
+    PARSE_SERVER_LIVE_QUERY: '{"classNames":["Post"]}'
+
+services:
+  mongo:
+    image: mongo:8.0.34
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 2s
+      retries: 60
+
+  postgres:
+    # Only published for amd64; Apple Silicon runs it under emulation.
+    image: postgis/postgis:18-3.6@sha256:b4466ea2ba7e3af54fcbba996d45325720f4b3ecb4f43f99b2f41367dc196f23
+    platform: linux/amd64
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: parse
+    healthcheck:
+      # Over TCP: during init the image runs a socket-only server that would
+      # pass a socket check and then restart under parse-server.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "parse"]
+      interval: 2s
+      retries: 60
+
+  parse-mongo:
+    <<: *parse
+    ports: ["1337:1337"]
+    environment:
+      <<: *parse-env
+      PARSE_SERVER_DATABASE_URI: mongodb://mongo:27017/parse
+    depends_on:
+      mongo: { condition: service_healthy }
+
+  parse-postgres:
+    <<: *parse
+    ports: ["1338:1337"]
+    environment:
+      <<: *parse-env
+      PARSE_SERVER_DATABASE_URI: postgres://postgres:postgres@postgres:5432/parse
+      # The default GridFS files adapter needs MongoDB.
+      PARSE_SERVER_FILES_ADAPTER: "@parse/fs-files-adapter"
+    tmpfs: ["/parse-server/files:mode=1777"]
+    depends_on:
+      postgres: { condition: service_healthy }

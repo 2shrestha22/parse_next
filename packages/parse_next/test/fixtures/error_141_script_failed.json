@@ -1,0 +1,12 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/functions/fail"
+  },
+  "response": {
+    "code": 141,
+    "error": "fail was called"
+  },
+  "status": 400
+}

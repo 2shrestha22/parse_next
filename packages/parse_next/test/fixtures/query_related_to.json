@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/classes/Author",
+    "query": {
+      "where": "{\"$relatedTo\":{\"object\":{\"__type\":\"Pointer\",\"className\":\"Post\",\"objectId\":\"obj0000005\"},\"key\":\"followers\"}}"
+    }
+  },
+  "response": {
+    "results": [
+      {
+        "createdAt": "2000-01-01T00:00:00.000Z",
+        "name": "Ann",
+        "objectId": "obj0000003",
+        "updatedAt": "2000-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": 200
+}

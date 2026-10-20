@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/classes/Post/obj0000006"
+  },
+  "response": {
+    "attachment": null,
+    "author": null,
+    "coauthors": null,
+    "count": null,
+    "createdAt": "2000-01-01T00:00:00.000Z",
+    "data": null,
+    "followers": {
+      "__type": "Relation",
+      "className": "Author"
+    },
+    "location": null,
+    "meta": null,
+    "objectId": "obj0000006",
+    "published": null,
+    "publishedAt": null,
+    "ratio": null,
+    "score": null,
+    "status": null,
+    "tags": null,
+    "title": null,
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

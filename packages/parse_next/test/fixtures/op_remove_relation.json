@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": {
+      "followers": {
+        "__op": "RemoveRelation",
+        "objects": [
+          {
+            "__type": "Pointer",
+            "className": "Author",
+            "objectId": "obj0000004"
+          }
+        ]
+      }
+    },
+    "method": "PUT",
+    "path": "/classes/Post/obj0000005"
+  },
+  "response": {
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

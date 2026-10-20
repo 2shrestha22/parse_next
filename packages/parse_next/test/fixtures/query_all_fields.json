@@ -1,0 +1,118 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/classes/Post",
+    "query": {
+      "where": "{\"objectId\":\"obj0000005\"}"
+    }
+  },
+  "response": {
+    "results": [
+      {
+        "ACL": {
+          "*": {
+            "read": true
+          },
+          "obj0000001": {
+            "read": true,
+            "write": true
+          },
+          "role:admin": {
+            "read": true
+          }
+        },
+        "area": {
+          "__type": "Polygon",
+          "coordinates": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        },
+        "attachment": {
+          "__type": "File",
+          "name": "file0001_hello.txt",
+          "url": "http://parse.test/parse/files/parse-next-it/file0001_hello.txt"
+        },
+        "author": {
+          "__type": "Pointer",
+          "className": "Author",
+          "objectId": "obj0000003"
+        },
+        "coauthors": [
+          {
+            "__type": "Pointer",
+            "className": "Author",
+            "objectId": "obj0000003"
+          },
+          {
+            "__type": "Pointer",
+            "className": "Author",
+            "objectId": "obj0000004"
+          }
+        ],
+        "count": 20,
+        "createdAt": "2000-01-01T00:00:00.000Z",
+        "data": {
+          "__type": "Bytes",
+          "base64": "AAEC/w=="
+        },
+        "followers": {
+          "__type": "Relation",
+          "className": "Author"
+        },
+        "location": {
+          "__type": "GeoPoint",
+          "latitude": 27.7,
+          "longitude": 85.3
+        },
+        "meta": {
+          "list": [
+            1,
+            "two"
+          ],
+          "n": 1,
+          "nested": {
+            "b": true
+          },
+          "nil": null,
+          "s": "x"
+        },
+        "objectId": "obj0000005",
+        "published": true,
+        "publishedAt": {
+          "__type": "Date",
+          "iso": "2024-01-02T03:04:05.678Z"
+        },
+        "ratio": 1.5,
+        "score": 2,
+        "slug": "hello-world",
+        "status": "published",
+        "tags": [
+          "a",
+          "b"
+        ],
+        "title": "Hello, wörld 👋",
+        "updatedAt": "2000-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": 200
+}

@@ -1,0 +1,23 @@
+{
+  "request": {
+    "body": {
+      "tags": {
+        "__op": "Remove",
+        "objects": [
+          "a"
+        ]
+      }
+    },
+    "method": "PUT",
+    "path": "/classes/Post/obj0000005"
+  },
+  "response": {
+    "tags": [
+      "b",
+      "c",
+      "d"
+    ],
+    "updatedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "status": 200
+}

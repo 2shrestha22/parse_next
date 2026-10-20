@@ -1,0 +1,13 @@
+name: parse_next_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+workspace:
+  - packages/parse_next
+  - packages/parse_next_generator
+  - packages/parse_next_it
+
+dev_dependencies:
+  lints: ">=5.1.0 <7.0.0"
