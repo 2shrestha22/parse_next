@@ -40,6 +40,9 @@ step "G9 no skip without a reason"
 no_match -rnE 'skip:[[:space:]]*true|@Skip\([[:space:]]*\)' packages/*/test ||
   fail "skip without a reason string"
 
+step "embedded fixtures are current"
+dart run packages/parse_next/tool/embed_fixtures.dart --check
+
 step "G3 analyze"
 dart analyze --fatal-infos
 

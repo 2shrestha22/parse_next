@@ -53,7 +53,7 @@ Pinned at the start and changed only on purpose:
 4. **Compile-fail suite.** Each `test/compile_fail/*.dart` file starts with the analyzer error code it must produce. A test runs `dart analyze --format=machine` on each file and checks the code. The folder is excluded from the normal analyze run.
 5. **Generator golden tests.** `build_test`'s `testBuilder` must produce byte-identical output.
 
-## Server behavior found in Phase 0 (parse-server 9.10.5)
+## Server behavior found so far (parse-server 9.10.5)
 
 Later phases must follow these:
 
@@ -70,6 +70,9 @@ Later phases must follow these:
 | `2.0` comes back as `2`. | Phase 1 |
 | A unique index treats a missing field as null on Mongo (only one object may lack it) but not on Postgres. | Phase 3 |
 | File URLs follow the request host. Public file upload is off by default. | Phase 8 |
+| A Polygon needs at least 3 distinct vertices, or the write fails (`PolygonCoder.JSONToDatabase` in `MongoTransform.js`). `Polygon` checks this at construction. | Phase 1, 3 |
+| A create returns only `objectId` and `createdAt`, not `updatedAt`; a GET straight after has both. | Phase 3 |
+| The file upload response is `{name, url}` without `__type`, unlike a File field. | Phase 8 |
 
 ## Repo layout
 
