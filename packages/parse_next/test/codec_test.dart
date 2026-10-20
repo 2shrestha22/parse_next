@@ -8,6 +8,8 @@ import 'models.dart';
 
 Json parse(String source) => Json(jsonDecode(source) as Map<String, Object?>);
 
+enum Mood { happy, sad }
+
 Matcher decodeError(String key) =>
     throwsA(isA<DecodeError>().having((e) => e.key, 'key', key));
 
@@ -31,6 +33,28 @@ void main() {
         expect(j.optPointer('x', authorSchema), isNull);
         expect(() => j.require<String>('x'), decodeError('x'));
       }
+    });
+
+    test('required lists and pointers reject null and absent', () {
+      for (final j in [parse('{"x": null}'), parse('{}')]) {
+        expect(() => j.requireList<String>('x'), decodeError('x'));
+        expect(() => j.requirePointer('x', authorSchema), decodeError('x'));
+        expect(() => j.requirePointerList('x', authorSchema), decodeError('x'));
+        expect(() => j.requireEnum('x', Mood.values), decodeError('x'));
+        expect(j.optEnum('x', Mood.values), isNull);
+      }
+      final j = parse('{"l": ["a"], "p": {"__type": "Pointer",'
+          ' "className": "Author", "objectId": "a1"}}');
+      expect(j.requireList<String>('l'), ['a']);
+      expect(j.requirePointer('p', authorSchema).id, 'a1');
+    });
+
+    test('enums decode by name; an unknown name is a DecodeError', () {
+      final j = parse('{"m": "sad", "u": "Sad"}');
+      expect(j.requireEnum('m', Mood.values), Mood.sad);
+      expect(j.optEnum('m', Mood.values), Mood.sad);
+      expect(() => j.requireEnum('u', Mood.values), decodeError('u'));
+      expect(() => j.optEnum('u', Mood.values), decodeError('u'));
     });
 
     test('a value of the wrong type names its key', () {
@@ -205,6 +229,14 @@ void main() {
         decodeError('b.base64'),
       );
     });
+  });
+
+  test('ParseFile equality ignores the server-built url', () {
+    const a = ParseFile(name: 'f.txt');
+    const b = ParseFile(name: 'f.txt', url: 'http://x/f.txt');
+    expect(a, b);
+    expect(a.hashCode, b.hashCode);
+    expect(a, isNot(const ParseFile(name: 'g.txt')));
   });
 
   group('Acl', () {

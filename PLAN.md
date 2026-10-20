@@ -65,7 +65,15 @@ Later phases must follow these:
 | A cloud `throw new Error(msg)` returns `{"code":141,"error":msg}` unsanitized. | Phase 7 |
 | Increment, Add, AddUnique and Remove return the new field value; Delete, AddRelation and RemoveRelation return only `updatedAt`. | Phase 3 |
 | On Postgres, AddUnique reorders the array (`SELECT DISTINCT` in `add-unique.sql`). After AddUnique/Remove, compare arrays as sets on Postgres. | Phase 3, 4 |
-| On Mongo, unsetting a Polygon field makes every later GET and DELETE of that object return 500 (`MongoTransform.js` reads `.coordinates` before checking for null). Skip that test on Mongo, with the reason. | Phase 3 |
+| On Mongo, writing `null` to a Polygon field (in a create or a PUT) makes every later GET and DELETE of that object return 500 (`MongoTransform.js` reads `.coordinates` before checking for null). A `Delete` op is fine, so the SDK never sends null: create leaves null fields out, and `replace` and `unset` send `Delete`. | Phase 3 |
+| A class allows one GeoPoint field, on both databases (`validateObject` and `validateSchemaData` in `SchemaController.js`). | Phase 3, 5 |
+| On Postgres, an update or replace that writes a Bytes value fails with 119 `Postgres doesn't support update` (`updateObjectsByQuery` in `PostgresStorageAdapter.js`); creating one and `Delete` work. | Phase 3, 8 |
+| On Postgres, a `Delete` of a field the class schema lacks is a 500 (`column … does not exist`); Mongo accepts it. `replace` sends a `Delete` for every null field, so every field must be in the schema. | Phase 3 |
+| Empty Bytes are rejected with 111 `This is not a valid Bytes`: `getObjectType` in `SchemaController.js` tests `base64` for truthiness. | Phase 3 |
+| `AddRelation`/`RemoveRelation` with an empty `objects` list is a 500 (`getObjectType` reads `objects[0].className`). `RelationOps` rejects an empty list with `ArgumentError`. | Phase 3 |
+| Clients cannot create classes (`allowClientClassCreation` defaults to false; 119 `Permission denied`) but can add fields to an existing one. Tests create schemas with the master key. | Phase 3 |
+| New users have no public read (`enforcePrivateUsers` defaults to true), so an anonymous GET of a `_User` is 101. | Phase 3, 6 |
+| A create response carries the fields a `beforeSave` trigger changed, and a field the trigger unset as `{"__op":"Delete"}` (`_updateResponseWithData` in `RestWrite.js`). | Phase 3 |
 | Polygons come back closed: the server appends the first point. | Phase 1, 3 |
 | `2.0` comes back as `2`. | Phase 1 |
 | A unique index treats a missing field as null on Mongo (only one object may lack it) but not on Postgres. | Phase 3 |
@@ -181,6 +189,7 @@ parse_next/                     pub workspace (Dart ≥ 3.6)
   - `remove` removes, and `unset` makes the field absent
   - relation add and remove are confirmed with a `$relatedTo` query
 - `replace` overwrites every field.
+  - Not possible for Post on Postgres, which rejects any update that writes a Bytes value (see the table above), and Post has a required Bytes field. That test is skipped on Postgres with the reason; `replace` sending nulls as `Delete` is proved there on Note, which has no Bytes field.
 - A missing id raises `ObjectNotFound`.
 - A wrong app id raises `Unauthorized`, and an unreachable host raises `NetworkError` (moved from Phase 2).
 - An ACL denial: user B updating user A's object gets **101 `ObjectNotFound`**, not a 403. The test locks in that server behavior.

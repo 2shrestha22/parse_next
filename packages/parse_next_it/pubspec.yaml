@@ -5,6 +5,9 @@ resolution: workspace
 environment:
   sdk: ^3.6.0
 
+dependencies:
+  parse_next: any
+
 dev_dependencies:
   http: ^1.6.0
   test: ^1.26.0

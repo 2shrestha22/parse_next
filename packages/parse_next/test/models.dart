@@ -7,7 +7,13 @@ final class Author {
   final String name;
 }
 
-final class AuthorSchema implements ParseSchema<Author> {
+final class AuthorOps {
+  const AuthorOps();
+
+  SetOps<String> get name => const SetOps('name');
+}
+
+final class AuthorSchema implements ParseSchema<Author, AuthorOps> {
   const AuthorSchema();
 
   @override
@@ -18,6 +24,9 @@ final class AuthorSchema implements ParseSchema<Author> {
 
   @override
   Json encode(Author value) => Json({'name': value.name});
+
+  @override
+  AuthorOps get ops => const AuthorOps();
 }
 
 const authorSchema = AuthorSchema();
@@ -82,7 +91,36 @@ final class Post {
       };
 }
 
-final class PostSchema implements ParseSchema<Post> {
+final class PostOps {
+  const PostOps();
+
+  NullableSetOps<String> get title => const NullableSetOps('title');
+  NullableSetOps<String> get slug => const NullableSetOps('slug');
+  NullableSetOps<String> get status => const NullableSetOps('status');
+  NullableNumOps<int> get count => const NullableNumOps('count');
+  NullableNumOps<double> get ratio => const NullableNumOps('ratio');
+  NullableNumOps<double> get score => const NullableNumOps('score');
+  NullableSetOps<bool> get published => const NullableSetOps('published');
+  NullableSetOps<DateTime> get publishedAt =>
+      const NullableSetOps('publishedAt', encodeDate);
+  NullableListOps<String> get tags => const NullableListOps('tags');
+  NullableSetOps<Json> get meta => const NullableSetOps('meta');
+  NullableSetOps<GeoPoint> get location =>
+      NullableSetOps('location', (v) => v.toJson());
+  NullableSetOps<Polygon> get area => NullableSetOps('area', (v) => v.toJson());
+  NullableSetOps<ParseFile> get attachment =>
+      NullableSetOps('attachment', (v) => v.toJson());
+  NullableSetOps<Uint8List> get data =>
+      const NullableSetOps('data', encodeBytes);
+  NullableSetOps<Pointer<Author>> get author =>
+      NullableSetOps('author', (v) => v.encode(authorSchema));
+  NullableListOps<Pointer<Author>> get coauthors =>
+      NullableListOps('coauthors', (v) => v.encode(authorSchema));
+  RelationOps<Author> get followers =>
+      const RelationOps('followers', authorSchema);
+}
+
+final class PostSchema implements ParseSchema<Post, PostOps> {
   const PostSchema();
 
   @override
@@ -129,6 +167,9 @@ final class PostSchema implements ParseSchema<Post> {
         'coauthors':
             value.coauthors?.map((p) => p.encode(authorSchema)).toList(),
       });
+
+  @override
+  PostOps get ops => const PostOps();
 }
 
 const postSchema = PostSchema();

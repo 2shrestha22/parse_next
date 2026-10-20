@@ -25,18 +25,38 @@ extension type const Json(Map<String, Object?> _map)
     return v == null ? null : _as<T>(key, v);
   }
 
+  List<T> requireList<T extends Object>(String key) =>
+      optList<T>(key) ?? (throw DecodeError(key, 'missing'));
+
   List<T>? optList<T extends Object>(String key) =>
       _list(key, (k, v) => _as<T>(k, v));
 
-  Pointer<T>? optPointer<T>(String key, ParseSchema<T> schema) {
+  /// Enums are stored by [Enum.name].
+  E requireEnum<E extends Enum>(String key, List<E> values) =>
+      _enum(key, require<String>(key), values);
+
+  E? optEnum<E extends Enum>(String key, List<E> values) {
+    final s = opt<String>(key);
+    return s == null ? null : _enum(key, s, values);
+  }
+
+  Pointer<T> requirePointer<T>(String key, ParseSchema<T, Object?> schema) =>
+      optPointer(key, schema) ?? (throw DecodeError(key, 'missing'));
+
+  Pointer<T>? optPointer<T>(String key, ParseSchema<T, Object?> schema) {
     final v = this[key];
     return v == null ? null : _pointer(key, v, schema);
   }
 
-  List<Pointer<T>>? optPointerList<T>(String key, ParseSchema<T> schema) =>
+  List<Pointer<T>> requirePointerList<T>(
+          String key, ParseSchema<T, Object?> schema) =>
+      optPointerList(key, schema) ?? (throw DecodeError(key, 'missing'));
+
+  List<Pointer<T>>? optPointerList<T>(
+          String key, ParseSchema<T, Object?> schema) =>
       _list(key, (k, v) => _pointer(k, v, schema));
 
-  Relation<T> relation<T>(String key, ParseSchema<T> schema) {
+  Relation<T> relation<T>(String key, ParseSchema<T, Object?> schema) {
     final v = this[key];
     if (v != null) {
       final j = Json(_typed(key, v, 'Relation'));
@@ -58,16 +78,22 @@ extension type const Json(Map<String, Object?> _map)
   }
 }
 
-/// What `Pointer` and `Doc` decoding need from a generated `$XSchema`.
-abstract interface class ParseSchema<T> {
+/// A generated `$XSchema`. `O` is the typed ops object that
+/// `Collection.update` passes to its builder.
+abstract interface class ParseSchema<T, O> {
   String get className;
   T decode(Json json);
+
+  /// Must include a null nullable field as `null`, not leave it out:
+  /// `Collection.replace` turns it into a `Delete`, and an omitted key keeps
+  /// its old value on the server.
   Json encode(T value);
+  O get ops;
 }
 
 /// A saved object: the model plus the fields the server owns.
 final class Doc<T> {
-  const Doc._({
+  const Doc({
     required this.id,
     required this.createdAt,
     required this.updatedAt,
@@ -75,7 +101,7 @@ final class Doc<T> {
     required this.data,
   });
 
-  factory Doc.decode(Json json, ParseSchema<T> schema) => Doc._(
+  factory Doc.decode(Json json, ParseSchema<T, Object?> schema) => Doc(
         id: json.require<String>('objectId'),
         createdAt: json.require<DateTime>('createdAt'),
         updatedAt: json.require<DateTime>('updatedAt'),
@@ -101,7 +127,7 @@ final class Pointer<T> {
   /// Non-null only when the query included this field.
   final Doc<T>? loaded;
 
-  Map<String, Object?> encode(ParseSchema<T> schema) =>
+  Map<String, Object?> encode(ParseSchema<T, Object?> schema) =>
       {'__type': 'Pointer', 'className': schema.className, 'objectId': id};
 }
 
@@ -188,18 +214,17 @@ final class ParseFile {
 
   final String name;
 
-  /// Not sent on encode: the server stores only the name and builds the URL
-  /// from the request host.
+  /// Not sent on encode and ignored by `==`: the server stores only the name
+  /// and builds the URL from the request host.
   final String? url;
 
   Map<String, Object?> toJson() => {'__type': 'File', 'name': name};
 
   @override
-  bool operator ==(Object other) =>
-      other is ParseFile && other.name == name && other.url == url;
+  bool operator ==(Object other) => other is ParseFile && other.name == name;
 
   @override
-  int get hashCode => Object.hash(name, url);
+  int get hashCode => name.hashCode;
 
   @override
   String toString() => 'ParseFile($name, $url)';
@@ -259,6 +284,8 @@ final class Acl {
 Map<String, Object?> encodeDate(DateTime date) =>
     {'__type': 'Date', 'iso': _truncate(date).toIso8601String()};
 
+/// The server rejects empty bytes with 111, since it checks `base64` for
+/// truthiness (`getObjectType` in SchemaController.js).
 Map<String, Object?> encodeBytes(Uint8List bytes) =>
     {'__type': 'Bytes', 'base64': base64Encode(bytes)};
 
@@ -308,7 +335,8 @@ Map<String, Object?> _typed(String key, Object? v, String type) {
   throw DecodeError(key, 'expected __type $type, got ${_kind(v)}');
 }
 
-void _checkClass<T>(String key, String className, ParseSchema<T> schema) {
+void _checkClass(
+    String key, String className, ParseSchema<Object?, Object?> schema) {
   if (className != schema.className) {
     throw DecodeError(
         '$key.className', 'expected ${schema.className}, got $className');
@@ -390,7 +418,7 @@ Uint8List _bytes(String key, Object? v) {
   });
 }
 
-Pointer<T> _pointer<T>(String key, Object? v, ParseSchema<T> schema) {
+Pointer<T> _pointer<T>(String key, Object? v, ParseSchema<T, Object?> schema) {
   if (v is! Map<String, Object?>) {
     throw DecodeError(key, 'expected a Pointer, got ${_kind(v)}');
   }
@@ -405,6 +433,13 @@ Pointer<T> _pointer<T>(String key, Object? v, ParseSchema<T> schema) {
     final doc = Doc.decode(j, schema);
     return Pointer<T>._(doc.id, doc);
   });
+}
+
+E _enum<E extends Enum>(String key, String name, List<E> values) {
+  for (final v in values) {
+    if (v.name == name) return v;
+  }
+  throw DecodeError(key, 'unknown value "$name"');
 }
 
 Acl _acl(String key, Object? v) {
