@@ -73,6 +73,7 @@ Later phases must follow these:
 | A Polygon needs at least 3 distinct vertices, or the write fails (`PolygonCoder.JSONToDatabase` in `MongoTransform.js`). `Polygon` checks this at construction. | Phase 1, 3 |
 | A create returns only `objectId` and `createdAt`, not `updatedAt`; a GET straight after has both. | Phase 3 |
 | The file upload response is `{name, url}` without `__type`, unlike a File field. | Phase 8 |
+| An uncaught internal error is 500 `{"code":1,"message":…}`: the text is under `message`, not `error` (`handleParseErrors` in `middlewares.js`). Any other 403 without a `code`, such as `unauthorized: master key is required`, is also sent with `res.end` and no `Content-Type`; every 403 without a code maps to `Unauthorized`. | Phase 2 |
 
 ## Repo layout
 
@@ -152,7 +153,7 @@ parse_next/                     pub workspace (Dart ≥ 3.6)
   - each captured error fixture maps to the right subclass
   - a timeout becomes `NetworkError`
   - exactly one request is sent per call
-- Integration tests: a wrong app id gives `Unauthorized`, and an unreachable host gives `NetworkError`.
+- The integration tests for a wrong app id (`Unauthorized`) and an unreachable host (`NetworkError`) moved to Phase 3: there is no public call to make until `Collection` exists, and the request function stays private.
 
 **Exit:** every error fixture is covered, and the `switch` over `ParseException` is exhaustive with no `default`.
 
@@ -181,6 +182,7 @@ parse_next/                     pub workspace (Dart ≥ 3.6)
   - relation add and remove are confirmed with a `$relatedTo` query
 - `replace` overwrites every field.
 - A missing id raises `ObjectNotFound`.
+- A wrong app id raises `Unauthorized`, and an unreachable host raises `NetworkError` (moved from Phase 2).
 - An ACL denial: user B updating user A's object gets **101 `ObjectNotFound`**, not a 403. The test locks in that server behavior.
 - Compile-fail: `unset` on a non-nullable field, `increment` on a String or List, and passing a value of the wrong type to `set`.
 

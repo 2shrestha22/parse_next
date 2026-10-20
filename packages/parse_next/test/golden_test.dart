@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:parse_next/parse_next.dart';
+import 'package:parse_next/src/client.dart';
 import 'package:test/test.dart';
 
 import 'fixtures.g.dart';
@@ -10,6 +13,12 @@ import 'models.dart';
 const covered = {
   'create_all_fields.json',
   'create_null_fields.json',
+  'error_101_acl_denied.json',
+  'error_101_missing.json',
+  'error_137_duplicate.json',
+  'error_141_script_failed.json',
+  'error_209_invalid_session.json',
+  'error_unauthorized.json',
   'file_upload.json',
   'get_after_ops.mongo.json',
   'get_after_ops.postgres.json',
@@ -28,15 +37,6 @@ const covered = {
   'query_all_fields.json',
   'query_include.json',
   'query_related_to.json',
-};
-
-const deferred = {
-  'error_101_acl_denied.json': 'error mapping is Phase 2',
-  'error_101_missing.json': 'error mapping is Phase 2',
-  'error_137_duplicate.json': 'error mapping is Phase 2',
-  'error_141_script_failed.json': 'error mapping is Phase 2',
-  'error_209_invalid_session.json': 'error mapping is Phase 2',
-  'error_unauthorized.json': 'error mapping is Phase 2',
 };
 
 Map<String, Object?> fixture(String name) {
@@ -104,9 +104,8 @@ Json encodeWithAcl(Post post, Acl acl) =>
     Json({...postSchema.encode(post), 'ACL': acl.toJson()});
 
 void main() {
-  test('every fixture is covered or deferred with a reason', () {
-    expect(covered.intersection(deferred.keys.toSet()), isEmpty);
-    expect(fixtures.keys.toSet(), {...covered, ...deferred.keys});
+  test('every fixture is covered', () {
+    expect(fixtures.keys.toSet(), covered);
   });
 
   group('create', () {
@@ -250,6 +249,83 @@ void main() {
         final r = response(name);
         expect(r.keys, ['updatedAt']);
         expect(r.require<DateTime>('updatedAt'), epoch);
+      });
+    }
+  });
+
+  group('errors', () {
+    for (final (name, matcher) in [
+      (
+        'error_101_acl_denied.json',
+        isA<ObjectNotFound>()
+            .having((e) => e.code, 'code', 101)
+            .having((e) => e.status, 'status', 404)
+            .having((e) => e.message, 'message', 'Object not found.'),
+      ),
+      (
+        'error_101_missing.json',
+        isA<ObjectNotFound>()
+            .having((e) => e.code, 'code', 101)
+            .having((e) => e.status, 'status', 404)
+            .having((e) => e.message, 'message', 'Object not found.'),
+      ),
+      (
+        'error_137_duplicate.json',
+        isA<DuplicateValue>()
+            .having((e) => e.code, 'code', 137)
+            .having((e) => e.status, 'status', 400)
+            .having((e) => e.message, 'message',
+                'A duplicate value for a field with unique values was provided'),
+      ),
+      (
+        'error_141_script_failed.json',
+        isA<ScriptFailed>()
+            .having((e) => e.code, 'code', 141)
+            .having((e) => e.status, 'status', 400)
+            .having((e) => e.message, 'message', 'fail was called'),
+      ),
+      (
+        'error_209_invalid_session.json',
+        isA<InvalidSession>()
+            .having((e) => e.code, 'code', 209)
+            .having((e) => e.status, 'status', 400)
+            .having((e) => e.message, 'message', 'Invalid session token'),
+      ),
+      (
+        'error_unauthorized.json',
+        isA<Unauthorized>()
+            .having((e) => e.status, 'status', 403)
+            .having((e) => e.message, 'message', 'unauthorized'),
+      ),
+    ]) {
+      test(name, () async {
+        final f = fixture(name);
+        final req = f['request']! as Map<String, Object?>;
+        final client = ParseClient(
+          server: Uri.parse('http://parse.test/parse'),
+          appId: 'parse-next-it',
+          httpClient: MockClient((_) async => http.Response(
+                jsonEncode(f['response']),
+                f['status']! as int,
+                // Express's res.json sets this; invalidRequest in
+                // middlewares.js writes the unauthorized body with res.end.
+                headers: name == 'error_unauthorized.json'
+                    ? {}
+                    : {'content-type': 'application/json; charset=utf-8'},
+              )),
+        );
+        await expectLater(
+          request(
+            client,
+            req['method']! as String,
+            req['path']! as String,
+            body: switch (req['body']) {
+              final Map<String, Object?> b => Json(b),
+              _ => null,
+            },
+          ),
+          throwsA(matcher),
+        );
       });
     }
   });
