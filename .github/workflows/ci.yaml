@@ -6,7 +6,9 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest or ubuntu-24.04: their kernel makes Mongo 8 refuse to
+    # start (SERVER-121912; SERVER-136848 misreads Ubuntu's 7.0.0 kernels).
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
