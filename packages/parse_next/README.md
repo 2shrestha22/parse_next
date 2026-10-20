@@ -2,7 +2,7 @@
 
 A type-safe [Parse Server](https://parseplatform.org) SDK for Dart and Flutter, built on code generation. Models are plain immutable classes; queries and updates are checked by the compiler, with no string keys in app code. It runs on the VM, Flutter and the web, and depends only on `http` and `web_socket_channel`.
 
-Tested against parse-server 9.10.5 and 8.6.112, on MongoDB and on Postgres.
+Tested against parse-server 9.10.5, on MongoDB and on Postgres.
 
 ## Install
 

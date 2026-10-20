@@ -1,5 +1,5 @@
 x-parse: &parse
-  image: parseplatform/parse-server:${PARSE_SERVER_VERSION:-9.10.5}
+  image: parseplatform/parse-server:9.10.5
   volumes:
     - ../packages/parse_next_it/cloud:/parse-server/cloud:ro
   healthcheck:
