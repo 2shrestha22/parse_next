@@ -14,13 +14,7 @@ no_match() {
   [ "$status" -eq 1 ]
 }
 
-# pubspec.lock is resolved on current stable and needs a newer SDK than the
-# lower bound, so only the lower-bound job may re-resolve.
-if [ "${PUB_RESOLVE:-}" = "1" ]; then
-  dart pub get
-else
-  dart pub get --enforce-lockfile
-fi
+dart pub get --enforce-lockfile
 
 step "G1 dependency allowlist"
 deps=$(awk '/^dependencies:/ {in_deps=1; next} /^[^ #]/ {in_deps=0}
@@ -44,10 +38,7 @@ step "embedded fixtures are current"
 dart run packages/parse_next/tool/embed_fixtures.dart --check
 
 step "generated code is current"
-# freezed's output differs between the versions pub resolves on the lower
-# bound and on stable; only stable's matches the committed files.
-generated=(-name '*.parse.dart')
-[ "${PUB_RESOLVE:-}" = "1" ] || generated+=(-o -name '*.freezed.dart')
+generated=(-name '*.parse.dart' -o -name '*.freezed.dart')
 generators=(packages/parse_next_it packages/parse_next packages/parse_next_generator)
 sums() {
   find packages/parse_next_it/lib packages/parse_next/example packages/parse_next_generator/example \
