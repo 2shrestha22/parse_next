@@ -12,6 +12,13 @@ Builder parseBuilder(BuilderOptions options) =>
 const _parseClass = TypeChecker.fromUrl(
   'package:parse_next/src/annotations.dart#ParseClass',
 );
+const _parseFunctions = TypeChecker.fromUrl(
+  'package:parse_next/src/annotations.dart#ParseFunctions',
+);
+const _parseClient = TypeChecker.fromUrl(
+  'package:parse_next/src/client.dart#ParseClient',
+);
+const _doc = TypeChecker.fromUrl('package:parse_next/src/codec.dart#Doc');
 const _parseKey = TypeChecker.fromUrl(
   'package:parse_next/src/annotations.dart#ParseKey',
 );
@@ -44,6 +51,8 @@ final class _ParseGenerator extends Generator {
   String generate(LibraryReader library, BuildStep buildStep) => [
     for (final a in library.annotatedWith(_parseClass))
       _schema(a.element, a.annotation.read('name').stringValue),
+    for (final a in library.annotatedWith(_parseFunctions))
+      _functions(a.element),
   ].join('\n\n');
 }
 
@@ -314,4 +323,223 @@ String? _primitive(DartType t) {
   if (t.isDartCoreNum) return 'num';
   if (t.isDartCoreBool) return 'bool';
   return null;
+}
+
+const _values =
+    'String, int, double, num, bool, DateTime, an enum, a List of String, '
+    'int, double, num or bool, Map<String, Object?>, Pointer<T>, '
+    'List<Pointer<T>>, ParseFile, GeoPoint, Polygon, Uint8List';
+
+String _functions(Element element) {
+  if (element is! ClassElement) {
+    throw InvalidGenerationSourceError(
+      '@ParseFunctions applies only to classes.',
+      element: element,
+    );
+  }
+  final name = element.displayName;
+  final factory = '`factory $name(ParseClient client) = _\$$name;`';
+  final constructor = element.unnamedConstructor;
+  final params = constructor?.formalParameters ?? const [];
+  if (constructor == null ||
+      !constructor.isFactory ||
+      params.length != 1 ||
+      !params.single.isRequiredPositional ||
+      !_parseClient.isExactlyType(params.single.type) ||
+      !_redirectsTo(constructor, '_\$$name')) {
+    throw InvalidGenerationSourceError(
+      '$name needs the constructor $factory.',
+      element: element,
+    );
+  }
+  if ([...element.getters, ...element.setters].firstOrNull case final a?) {
+    throw InvalidGenerationSourceError(
+      '${a.displayName} is a getter or setter; a @ParseFunctions class has '
+      'only abstract methods.',
+      element: a,
+    );
+  }
+  final methods = [for (final m in element.methods) _function(m)];
+  return '''
+final class _\$$name implements $name {
+  _\$$name(this._client);
+
+  final ParseClient _client;
+
+  ${methods.join('\n\n')}
+}''';
+}
+
+/// The redirect target is in the part being generated, so the analyzer
+/// cannot resolve it and [ConstructorElement.redirectedConstructor] is null;
+/// the source text is all there is.
+bool _redirectsTo(ConstructorElement constructor, String target) {
+  final fragment = constructor.firstFragment;
+  final source = fragment.libraryFragment.source.contents.data;
+  final end = source.indexOf(';', fragment.offset);
+  return end >= 0 &&
+      RegExp(
+        '=\\s*${RegExp.escape(target)}\\s*\$',
+      ).hasMatch(source.substring(fragment.offset, end));
+}
+
+String _function(MethodElement m) {
+  final name = m.displayName;
+  if (!m.isAbstract || m.isStatic) {
+    throw InvalidGenerationSourceError(
+      '$name has a body; a @ParseFunctions class has only abstract methods.',
+      element: m,
+    );
+  }
+  final returnType = m.returnType;
+  if (returnType is! InterfaceType || !returnType.isDartAsyncFuture) {
+    throw InvalidGenerationSourceError(
+      '$name returns ${returnType.getDisplayString()}; a cloud function '
+      'method returns a Future.',
+      element: m,
+    );
+  }
+  final result = returnType.typeArguments.single;
+
+  final body = <String>[];
+  final signature = <String>[];
+  for (final p in m.formalParameters) {
+    final param = p.displayName;
+    if (p.isPositional) {
+      throw InvalidGenerationSourceError(
+        '$param is positional; a cloud function method takes only named '
+        'parameters.',
+        element: p,
+      );
+    }
+    final type = p.type;
+    final nullable = type.nullabilitySuffix == NullabilitySuffix.question;
+    final encode = _wire(type, p, docs: false).encode(param);
+    final initial = p.defaultValueCode;
+    signature.add(
+      '${p.isRequired ? 'required ' : ''}${type.getDisplayString()} $param'
+      '${initial == null ? '' : ' = $initial'}',
+    );
+    body.add(
+      !nullable
+          ? "'$param': $encode,"
+          : encode == param
+          ? "'$param': ?$param,"
+          : "if ($param != null) '$param': $encode,",
+    );
+  }
+
+  final call = "_client.callFunction('$name', Json({${body.join('\n')}}))";
+  final read = result.nullabilitySuffix == NullabilitySuffix.question
+      ? 'opt'
+      : 'require';
+  final returns = result is VoidType
+      ? 'async { await $call; }'
+      : 'async => (await $call)'
+            '.${_wire(result, m, docs: true).decode(read, "'result'")};';
+  final params = signature.isEmpty ? '' : '{${signature.join(', ')}}';
+  return '''
+  @override
+  ${returnType.getDisplayString()} $name($params) $returns''';
+}
+
+typedef _Wire = ({
+  String Function(String value) encode,
+  String Function(String read, String key) decode,
+});
+
+/// [docs] allows `Doc<X>` and `List<Doc<X>>`, which cloud code can return
+/// but which cannot be sent.
+_Wire _wire(DartType type, Element at, {required bool docs}) {
+  Never unsupported() => throw InvalidGenerationSourceError(
+    docs
+        ? '${type.getDisplayString()} is not a supported return type. A cloud '
+              'function method returns a Future of void, $_values, Doc<T> or '
+              'List<Doc<T>>, or a nullable one of these.'
+        : '${type.getDisplayString()} is not a supported parameter type. A '
+              'parameter is $_values, or a nullable one of these.',
+    element: at,
+  );
+
+  String schema(DartType t) {
+    final element = t.element;
+    if (element == null || !_parseClass.hasAnnotationOfExact(element)) {
+      throw InvalidGenerationSourceError(
+        '${type.getDisplayString()} points to ${t.getDisplayString()}, which '
+        'is not a @ParseClass.',
+        element: at,
+      );
+    }
+    return 'const \$${element.displayName}Schema()';
+  }
+
+  _Wire typed(String t, String Function(String v) encode) =>
+      (encode: encode, decode: (read, k) => '$read<$t>($k)');
+
+  if (type is! InterfaceType) unsupported();
+  final args = type.typeArguments;
+  if (type.element is EnumElement) {
+    final e = type.element.displayName;
+    return (
+      encode: (v) => '$v.name',
+      decode: (read, k) => '${read}Enum($k, $e.values)',
+    );
+  }
+  if (_primitive(type) case final t?) return typed(t, (v) => v);
+  if (_dateTime.isExactlyType(type)) {
+    return typed('DateTime', (v) => 'encodeDate($v)');
+  }
+  if (_uint8List.isExactlyType(type)) {
+    return typed('Uint8List', (v) => 'encodeBytes($v)');
+  }
+  if (type.isDartCoreMap &&
+      _element(args[0]) == 'String' &&
+      args[1].isDartCoreObject &&
+      args[1].nullabilitySuffix == NullabilitySuffix.question) {
+    return typed('Map<String, Object?>', (v) => v);
+  }
+  for (final (checker, t) in [
+    (_parseFile, 'ParseFile'),
+    (_geoPoint, 'GeoPoint'),
+    (_polygon, 'Polygon'),
+  ]) {
+    if (checker.isExactlyType(type)) return typed(t, (v) => '$v.toJson()');
+  }
+  if (_pointer.isExactlyType(type)) {
+    final s = schema(args[0]);
+    return (
+      encode: (v) => '$v.encode($s)',
+      decode: (read, k) => '${read}Pointer($k, $s)',
+    );
+  }
+  if (docs && _doc.isExactlyType(type)) {
+    final s = schema(args[0]);
+    return (
+      encode: (_) => unsupported(),
+      decode: (read, k) => '${read}Doc($k, $s)',
+    );
+  }
+  if (type.isDartCoreList) {
+    final e = args[0];
+    if (_element(e) case final t?) {
+      return (encode: (v) => v, decode: (read, k) => '${read}List<$t>($k)');
+    }
+    if (e is InterfaceType && e.nullabilitySuffix == NullabilitySuffix.none) {
+      if (_pointer.isExactlyType(e)) {
+        final s = schema(e.typeArguments[0]);
+        return (
+          encode: (v) => '$v.map((p) => p.encode($s)).toList()',
+          decode: (read, k) => '${read}PointerList($k, $s)',
+        );
+      }
+      if (docs && _doc.isExactlyType(e)) {
+        final s = schema(e.typeArguments[0]);
+        return (
+          encode: (_) => unsupported(),
+          decode: (read, k) => '${read}DocList($k, $s)',
+        );
+      }
+    }
+  }
+  unsupported();
 }

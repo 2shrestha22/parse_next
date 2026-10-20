@@ -1,0 +1,14 @@
+{
+  "request": {
+    "body": {
+      "code": 137
+    },
+    "method": "POST",
+    "path": "/functions/failWithCode"
+  },
+  "response": {
+    "code": 137,
+    "error": "failed with 137"
+  },
+  "status": 400
+}

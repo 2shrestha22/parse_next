@@ -1,0 +1,25 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/functions/whoAmI"
+  },
+  "response": {
+    "result": {
+      "ACL": {
+        "obj0000001": {
+          "read": true,
+          "write": true
+        }
+      },
+      "__type": "Object",
+      "className": "_User",
+      "createdAt": "2000-01-01T00:00:00.000Z",
+      "objectId": "obj0000001",
+      "sessionToken": "r:session0001",
+      "updatedAt": "2000-01-01T00:00:00.000Z",
+      "username": "alice"
+    }
+  },
+  "status": 200
+}

@@ -17,12 +17,14 @@ const covered = {
   'error_101_invalid_credentials.json',
   'error_101_missing.json',
   'error_137_duplicate.json',
+  'error_137_function.json',
   'error_141_script_failed.json',
   'error_202_username_taken.json',
   'error_203_email_taken.json',
   'error_209_invalid_session.json',
   'error_unauthorized.json',
   'file_upload.json',
+  'function_call.json',
   'get_after_ops.mongo.json',
   'get_after_ops.postgres.json',
   'get_all_fields.json',
@@ -304,6 +306,13 @@ void main() {
             ),
       ),
       (
+        'error_137_function.json',
+        isA<DuplicateValue>()
+            .having((e) => e.code, 'code', 137)
+            .having((e) => e.status, 'status', 400)
+            .having((e) => e.message, 'message', 'failed with 137'),
+      ),
+      (
         'error_141_script_failed.json',
         isA<ScriptFailed>()
             .having((e) => e.code, 'code', 141)
@@ -378,6 +387,30 @@ void main() {
         );
       });
     }
+  });
+
+  test('function_call: a returned Parse Object decodes as Doc', () async {
+    final f = fixture('function_call.json');
+    final req = f['request']! as Map<String, Object?>;
+    final sent = <http.Request>[];
+    final client = ParseClient(
+      server: Uri.parse('http://parse.test/parse'),
+      appId: 'parse-next-it',
+      httpClient: MockClient((r) async {
+        sent.add(r);
+        return http.Response(jsonEncode(f['response']), f['status']! as int);
+      }),
+    );
+    final response = await client.callFunction('whoAmI', Json({}));
+    expect(sent.single.url.path, '/parse${req['path']}');
+    expect(jsonDecode(sent.single.body), req['body']);
+
+    final doc = response.requireDoc('result', memberSchema);
+    expect(doc.id, 'obj0000001');
+    expect(doc.createdAt, epoch);
+    expect(doc.updatedAt, epoch);
+    expect(doc.acl, const Acl().withUser('obj0000001', write: true));
+    expect(doc.data.username, 'alice');
   });
 
   group('auth', () {

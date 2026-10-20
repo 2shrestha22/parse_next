@@ -22,24 +22,28 @@ Future<TestBuilderResult> _build(Map<String, String> sources) => testBuilder(
 );
 
 void main() {
-  test('output matches the hand-written schemas byte for byte', () async {
-    const models = ['post', 'user', 'item', 'note'];
+  test('output matches the goldens byte for byte', () async {
+    const sources = [
+      'models/post',
+      'models/user',
+      'models/item',
+      'models/note',
+      'cloud',
+    ];
     String read(String path) => File(path).readAsStringSync();
     final result = await testBuilder(
       _builder,
       {
         ..._runtime,
-        for (final m in models)
-          'parse_next_it|lib/models/$m.dart': read(
-            '../parse_next_it/lib/models/$m.dart',
-          ),
+        for (final s in sources)
+          'parse_next_it|lib/$s.dart': read('../parse_next_it/lib/$s.dart'),
       },
       isInput: (id) => id.startsWith('parse_next_it|'),
       rootPackage: 'parse_next_it',
       outputs: {
-        for (final m in models)
-          'parse_next_it|lib/models/$m.parse.dart': read(
-            'test/goldens/$m.parse.dart.golden',
+        for (final s in sources)
+          'parse_next_it|lib/$s.parse.dart': read(
+            'test/goldens/${s.split('/').last}.parse.dart.golden',
           ),
       },
     );
@@ -192,5 +196,152 @@ final class Bad {
         );
       });
     }
+  });
+
+  group('fails the build for @ParseFunctions', () {
+    Future<void> rejects(String members, List<String> message) async {
+      final result = await _build({
+        'parse_next_it|lib/bad.dart':
+            '''
+import 'package:parse_next/parse_next.dart';
+
+part 'bad.parse.dart';
+
+final class Plain {
+  const Plain();
+}
+
+@ParseFunctions()
+abstract class Bad {
+$members
+}
+''',
+      });
+      expect(result.succeeded, isFalse);
+      expect(
+        result.errors.join('\n'),
+        allOf([for (final m in message) contains(m)]),
+      );
+    }
+
+    const factory = '  factory Bad(ParseClient client) = _\$Bad;';
+
+    test('on a method that does not return a Future', () {
+      return rejects('$factory\n  int count();', [
+        'count returns int; a cloud function method returns a Future',
+        'bad.dart:12:7',
+      ]);
+    });
+
+    test('on an unsupported parameter type', () {
+      return rejects('$factory\n  Future<void> f({required Duration d});', [
+        'Duration is not a supported parameter type',
+        'bad.dart:12:37',
+      ]);
+    });
+
+    test('on an unsupported return type', () {
+      return rejects('$factory\n  Future<Duration> f();', [
+        'Duration is not a supported return type',
+        'bad.dart:12:20',
+      ]);
+    });
+
+    test('on a Relation parameter', () {
+      return rejects(
+        '$factory\n  Future<void> f({required Relation<Plain> r});',
+        ['Relation<Plain> is not a supported parameter type', 'bad.dart:12:44'],
+      );
+    });
+
+    test('on a Doc parameter', () {
+      return rejects('$factory\n  Future<void> f({required Doc<Plain> d});', [
+        'Doc<Plain> is not a supported parameter type',
+        'bad.dart:12:39',
+      ]);
+    });
+
+    test('on a positional parameter', () {
+      return rejects('$factory\n  Future<void> f(String s);', [
+        's is positional',
+        'bad.dart:12:25',
+      ]);
+    });
+
+    test('on an optional positional parameter', () {
+      return rejects('$factory\n  Future<void> f([String? s]);', [
+        's is positional',
+        'bad.dart:12:27',
+      ]);
+    });
+
+    for (final (what, constructor) in [
+      ('no constructor', ''),
+      ('a generative constructor', '  Bad(ParseClient client);'),
+      (
+        'a factory with a body',
+        '  factory Bad(ParseClient client) { throw 0; }',
+      ),
+      ('a redirect elsewhere', '  factory Bad(ParseClient client) = _\$Other;'),
+      ('a parameter of another type', '  factory Bad(String client) = _\$Bad;'),
+      (
+        'a named parameter',
+        '  factory Bad({required ParseClient client}) = _\$Bad;',
+      ),
+    ]) {
+      test('on $what instead of the redirecting factory', () {
+        return rejects('$constructor\n  Future<void> f();', [
+          'Bad needs the constructor `factory Bad(ParseClient client) = '
+              '_\$Bad;`',
+          'bad.dart:10:16',
+        ]);
+      });
+    }
+
+    for (final (type, column) in [
+      ('Pointer<Plain>', 43),
+      ('List<Pointer<Plain>>', 49),
+    ]) {
+      test('on a $type parameter whose target is not a @ParseClass', () {
+        return rejects('$factory\n  Future<void> f({required $type p});', [
+          '$type points to Plain, which is not a @ParseClass',
+          'bad.dart:12:$column',
+        ]);
+      });
+    }
+
+    for (final (type, column) in [
+      ('Doc<Plain>', 22),
+      ('List<Doc<Plain>>', 28),
+      ('Doc<Plain>?', 23),
+    ]) {
+      test('on a $type return whose target is not a @ParseClass', () {
+        return rejects('$factory\n  Future<$type> f();', [
+          '$type points to Plain, which is not a @ParseClass',
+          'bad.dart:12:$column',
+        ]);
+      });
+    }
+
+    test('on a method with a body', () {
+      return rejects('$factory\n  Future<void> f() async {}', [
+        'f has a body; a @ParseFunctions class has only abstract methods',
+        'bad.dart:12:16',
+      ]);
+    });
+
+    test('on a getter', () {
+      return rejects('$factory\n  Future<int> get n;', [
+        'n is a getter or setter',
+        'bad.dart:12:19',
+      ]);
+    });
+
+    test('on a setter', () {
+      return rejects('$factory\n  set n(int v);', [
+        'n is a getter or setter',
+        'bad.dart:12:7',
+      ]);
+    });
   });
 }

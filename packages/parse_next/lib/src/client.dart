@@ -57,6 +57,12 @@ final class ParseClient {
   Auth<U> auth<U>(ParseSchema<U, Object?, Object?> schema) =>
       Auth._(this, schema);
 
+  /// The call behind a `@ParseFunctions` method. The response holds the
+  /// function's return value under `result`, absent when it returned
+  /// `undefined`.
+  Future<Json> callFunction(String name, Json params) =>
+      request(this, 'POST', '/functions/$name', body: params);
+
   void close() {
     _changes.close();
     if (_ownsHttp) _http.close();

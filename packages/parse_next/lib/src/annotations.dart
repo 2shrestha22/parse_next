@@ -14,3 +14,12 @@ final class ParseKey {
 
   final String name;
 }
+
+/// On an abstract class whose abstract methods each call the cloud function
+/// of the same name, with the named parameters as its params. A null
+/// parameter is left out, so cloud code sees it as `undefined`.
+///
+/// The class needs the constructor `factory X(ParseClient client) = _$X;`.
+final class ParseFunctions {
+  const ParseFunctions();
+}

@@ -63,6 +63,26 @@ extension type const Json(Map<String, Object?> _map)
     ParseSchema<T, Object?, Object?> schema,
   ) => _list(key, (k, v) => _pointer(k, v, schema));
 
+  /// A Parse Object returned by cloud code, `{"__type": "Object"}` with its
+  /// fields inline.
+  Doc<T> requireDoc<T>(String key, ParseSchema<T, Object?, Object?> schema) =>
+      optDoc(key, schema) ?? (throw DecodeError(key, 'missing'));
+
+  Doc<T>? optDoc<T>(String key, ParseSchema<T, Object?, Object?> schema) {
+    final v = this[key];
+    return v == null ? null : _doc(key, v, schema);
+  }
+
+  List<Doc<T>> requireDocList<T>(
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) => optDocList(key, schema) ?? (throw DecodeError(key, 'missing'));
+
+  List<Doc<T>>? optDocList<T>(
+    String key,
+    ParseSchema<T, Object?, Object?> schema,
+  ) => _list(key, (k, v) => _doc(k, v, schema));
+
   Relation<T> relation<T>(String key, ParseSchema<T, Object?, Object?> schema) {
     final v = this[key];
     if (v != null) {
@@ -469,6 +489,12 @@ Pointer<T> _pointer<T>(
     final doc = Doc.decode(j, schema);
     return Pointer<T>._(doc.id, doc);
   });
+}
+
+Doc<T> _doc<T>(String key, Object? v, ParseSchema<T, Object?, Object?> schema) {
+  final j = Json(_typed(key, v, 'Object'));
+  _checkClass(key, _within(key, () => j.require<String>('className')), schema);
+  return _within(key, () => Doc.decode(j, schema));
 }
 
 E _enum<E extends Enum>(String key, String name, List<E> values) {

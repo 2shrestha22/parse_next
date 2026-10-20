@@ -325,6 +325,42 @@ void main() {
     });
   });
 
+  group('Doc', () {
+    const author =
+        '{"__type": "Object", "className": "Author", "objectId": "a1",'
+        ' "createdAt": "2000-01-01T00:00:00.000Z",'
+        ' "updatedAt": "2000-01-01T00:00:00.000Z", "name": "Ann"}';
+
+    test('decodes a Parse Object and a list of them', () {
+      final j = parse('{"d": $author, "l": [$author]}');
+      final doc = j.requireDoc('d', authorSchema);
+      expect(doc.id, 'a1');
+      expect(doc.data.name, 'Ann');
+      expect(j.requireDocList('l', authorSchema).single.id, 'a1');
+    });
+
+    test('null and absent are null, or missing when required', () {
+      final j = parse('{"n": null}');
+      for (final key in ['n', 'x']) {
+        expect(j.optDoc(key, authorSchema), isNull);
+        expect(j.optDocList(key, authorSchema), isNull);
+        expect(() => j.requireDoc(key, authorSchema), decodeError(key));
+        expect(() => j.requireDocList(key, authorSchema), decodeError(key));
+      }
+    });
+
+    test('a Pointer, another class or a bad field is a DecodeError', () {
+      final j = parse(
+        '{"p": {"__type": "Pointer", "className": "Author", "objectId": "a1"},'
+        ' "c": ${author.replaceFirst('Author', 'Post')},'
+        ' "l": [${author.replaceFirst('"Ann"', '7')}]}',
+      );
+      expect(() => j.optDoc('p', authorSchema), decodeError('p'));
+      expect(() => j.optDoc('c', authorSchema), decodeError('c.className'));
+      expect(() => j.optDocList('l', authorSchema), decodeError('l[0].name'));
+    });
+  });
+
   test('Relation with a different class is a DecodeError', () {
     final j = parse('{"r": {"__type": "Relation", "className": "Post"}}');
     expect(() => j.relation('r', authorSchema), decodeError('r.className'));

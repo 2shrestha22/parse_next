@@ -197,6 +197,22 @@ const fixtures = <String, String>{
   "status": 400
 }
 ''',
+  'error_137_function.json': r'''
+{
+  "request": {
+    "body": {
+      "code": 137
+    },
+    "method": "POST",
+    "path": "/functions/failWithCode"
+  },
+  "response": {
+    "code": 137,
+    "error": "failed with 137"
+  },
+  "status": 400
+}
+''',
   'error_141_script_failed.json': r'''
 {
   "request": {
@@ -284,6 +300,33 @@ const fixtures = <String, String>{
     "url": "http://parse.test/parse/files/parse-next-it/file0001_hello.txt"
   },
   "status": 201
+}
+''',
+  'function_call.json': r'''
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/functions/whoAmI"
+  },
+  "response": {
+    "result": {
+      "ACL": {
+        "obj0000001": {
+          "read": true,
+          "write": true
+        }
+      },
+      "__type": "Object",
+      "className": "_User",
+      "createdAt": "2000-01-01T00:00:00.000Z",
+      "objectId": "obj0000001",
+      "sessionToken": "r:session0001",
+      "updatedAt": "2000-01-01T00:00:00.000Z",
+      "username": "alice"
+    }
+  },
+  "status": 200
 }
 ''',
   'get_after_ops.mongo.json': r'''

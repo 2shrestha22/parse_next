@@ -96,6 +96,10 @@ Later phases must follow these:
 | The sign-up response is only `objectId`, `createdAt` and `sessionToken`: no `ACL`, no `updatedAt`. Login and `/users/me` return the whole user with its `ACL` and `sessionToken`. | Phase 6 |
 | Password reset fails with 1 unless the server has an email adapter, `appName` and `publicServerURL` (`_throwOnBadEmailConfig` in `UsersRouter.js`). An unknown email gets the same `{}` as a known one while `passwordPolicy.resetPasswordSuccessOnInvalidEmail` is unset (default true). Once `publicServerURL` is set it also replaces the request host in file URLs (`mount` in `Config.js`), so Compose sets each server's own host URL. | Phase 6, 8 |
 | Deleting a `_Session` with the master key also evicts its token from the server's user cache (`del` in `rest.js`), so the revoked token fails on its very next request. | Phase 6 |
+| Function params become a JS `Date`, `Parse.File` and `Parse.Object` for Date, File and Pointer; GeoPoint, Polygon and Bytes stay plain JSON (`parseParams` in `FunctionsRouter.js`). The result goes through `Parse._encode`: a fetched `Parse.Object` is `{"__type":"Object","className",…}` with its fields inline and `createdAt`/`updatedAt` as plain ISO strings, an unfetched one a Pointer, and every other value is encoded as in a field. `undefined` leaves `result` out of the response; `null` sends `"result": null`. | Phase 7 |
+| Returning a File param from cloud code kills the server process: the SDK sends a File without `url`, and `Parse._encode` throws `Tried to encode an unsaved file.` inside `success` in `FunctionsRouter.js`, where nothing catches it. The fixture functions return `file.toJSON()` instead. | Phase 7 |
+| A thrown `Parse.Error` keeps its code (`resolveError` in `triggers.js`), with the usual HTTP status (101 is 404, 1 is 500, the rest 400). A cloud `throw new Parse.Error(209, …)` therefore clears the caller's stored session. An unknown function is 141 `Invalid function: "name"`. | Phase 7 |
+| Returning `request.user` includes the caller's `sessionToken` in the result; decoding into a model drops it. | Phase 7 |
 
 ## Repo layout
 

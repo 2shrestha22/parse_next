@@ -272,6 +272,20 @@ class _Capture {
       save: 'error_141_script_failed',
     );
     await _call(
+      'POST',
+      '/functions/whoAmI',
+      token: aliceToken,
+      body: <String, Object?>{},
+      save: 'function_call',
+    );
+    await _call(
+      'POST',
+      '/functions/failWithCode',
+      body: {'code': 137},
+      expectError: true,
+      save: 'error_137_function',
+    );
+    await _call(
       'GET',
       '/classes/Post',
       token: 'r:invalid',
@@ -520,7 +534,8 @@ class _Capture {
   Object? _normalize(Object? json) => switch (json) {
     Map<String, Object?>() => {
       for (final MapEntry(:key, :value)
-          in json.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
+          in json.entries.toList()
+            ..sort((a, b) => _replace(a.key).compareTo(_replace(b.key))))
         _replace(
           key,
         ): (key == 'createdAt' || key == 'updatedAt') && value is String
