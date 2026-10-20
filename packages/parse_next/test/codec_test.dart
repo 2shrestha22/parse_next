@@ -258,7 +258,8 @@ void main() {
   });
 
   group('Acl', () {
-    final acl = Acl.publicRead()
+    final acl = const Acl()
+        .withPublic()
         .withUser('u1', write: true)
         .withRole('admin', read: false, write: true);
     final wire = {
@@ -290,7 +291,7 @@ void main() {
     });
 
     test('is immutable; revoking everything drops the entry', () {
-      final base = Acl.publicRead();
+      final base = const Acl().withPublic();
       final more = base.withUser('u1');
       expect(base.user('u1'), (read: false, write: false));
       expect(more.withUser('u1', read: false), base);

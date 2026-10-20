@@ -48,10 +48,16 @@ step "generated code is current"
 # bound and on stable; only stable's matches the committed files.
 generated=(-name '*.parse.dart')
 [ "${PUB_RESOLVE:-}" = "1" ] || generated+=(-o -name '*.freezed.dart')
-sums() { find packages/parse_next_it/lib "${generated[@]}" | sort | xargs cksum; }
+generators=(packages/parse_next_it packages/parse_next packages/parse_next_generator)
+sums() {
+  find packages/parse_next_it/lib packages/parse_next/example packages/parse_next_generator/example \
+    "${generated[@]}" | sort | xargs cksum
+}
 before=$(sums)
-(cd packages/parse_next_it && dart run build_runner build --delete-conflicting-outputs)
-[ "$before" = "$(sums)" ] || fail "generated code is stale; run build_runner in packages/parse_next_it"
+for dir in "${generators[@]}"; do
+  (cd "$dir" && dart run build_runner build --delete-conflicting-outputs)
+done
+[ "$before" = "$(sums)" ] || fail "generated code is stale; run build_runner in ${generators[*]}"
 
 step "G3 analyze"
 dart analyze --fatal-infos

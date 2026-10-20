@@ -348,7 +348,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 ## Phase 10: Release
 
 **Verify**
-- A Flutter example app's smoke test passes on iOS and Android simulators.
+- A Flutter example app's smoke test passes on iOS and Android simulators. It is manual, `tool/smoke.sh <device-id>...`, and not in `ci.sh`: it needs simulators, and `examples/flutter_smoke` stays outside the workspace so `dart pub get` never needs Flutter.
 - `dart pub publish --dry-run` is clean for `parse_next` and `parse_next_generator`.
 - The public API is reviewed against this plan, and anything not listed here is removed.
 

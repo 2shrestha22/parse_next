@@ -281,8 +281,6 @@ final class Acl {
 
   const Acl._(this._entries);
 
-  factory Acl.publicRead() => const Acl().withPublic();
-
   final Map<String, AclAccess> _entries;
 
   AclAccess get public => _get('*');

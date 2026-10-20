@@ -145,7 +145,7 @@ void main() {
       ]) {
         test(name, () async {
           final x = build();
-          final acl = Acl.publicRead().withPublic(write: true);
+          final acl = const Acl().withPublic().withPublic(write: true);
           final created = await posts.create(x, acl: acl);
           expect(wire(created.data), sameAs(x));
           expect(created.updatedAt, created.createdAt);

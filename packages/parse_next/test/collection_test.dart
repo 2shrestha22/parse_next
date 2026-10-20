@@ -258,7 +258,7 @@ void main() {
       await s.posts.replace(
         'p1',
         const Post(title: 'kept'),
-        acl: Acl.publicRead(),
+        acl: const Acl().withPublic(),
       );
       expect(s.only.method, 'PUT');
       expect(s.body, {
@@ -284,7 +284,7 @@ void main() {
       final s = Server(created);
       final doc = await s.posts.create(
         Post(title: 'hi', count: 0, author: const Pointer('a1')),
-        acl: Acl.publicRead().withUser('u1', write: true),
+        acl: const Acl().withPublic().withUser('u1', write: true),
       );
       expect(s.only.method, 'POST');
       expect(s.only.url.toString(), 'http://parse.test/parse/classes/Post');
@@ -304,7 +304,7 @@ void main() {
       expect(doc.id, 'p1');
       expect(doc.createdAt, DateTime.utc(2024, 1, 2, 3, 4, 5, 678));
       expect(doc.updatedAt, doc.createdAt);
-      expect(doc.acl, Acl.publicRead().withUser('u1', write: true));
+      expect(doc.acl, const Acl().withPublic().withUser('u1', write: true));
       expect(
         doc.data.view,
         Post(title: 'hi', count: 0, author: const Pointer('a1')).view,

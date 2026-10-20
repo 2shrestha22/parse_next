@@ -5,3 +5,10 @@ builders:
     build_extensions: {.dart: [.parse.dart]}
     auto_apply: dependents
     build_to: source
+
+targets:
+  $default:
+    builders:
+      :parse_next:
+        enabled: true
+        generate_for: [example/**]

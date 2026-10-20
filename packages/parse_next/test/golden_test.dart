@@ -68,7 +68,8 @@ Json firstResult(String name) => Json(
 
 final epoch = DateTime.utc(2000);
 
-final acl = Acl.publicRead()
+final acl = const Acl()
+    .withPublic()
     .withUser('obj0000001', write: true)
     .withRole('admin');
 
