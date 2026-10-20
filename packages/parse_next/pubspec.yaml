@@ -2,7 +2,7 @@ name: parse_next
 description: >-
   A type-safe Parse Server SDK for Dart and Flutter: generated models, typed
   queries and update ops, auth, cloud functions, batch, files and live queries.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/2shrestha22/parse_next
 resolution: workspace
 
@@ -23,5 +23,5 @@ dev_dependencies:
   async: ^2.11.0
   build_runner: ^2.10.0
   fake_async: ^1.3.3
-  parse_next_generator: ^0.1.0
+  parse_next_generator: ^0.2.0
   test: ^1.26.0

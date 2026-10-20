@@ -2,7 +2,7 @@ name: parse_next_generator
 description: >-
   The build_runner code generator for parse_next: typed fields, update ops and
   schemas for @ParseClass models, and clients for @ParseFunctions classes.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/2shrestha22/parse_next
 resolution: workspace
 
@@ -17,7 +17,7 @@ environment:
 dependencies:
   analyzer: ">=8.1.1 <15.0.0"
   build: ">=4.0.0 <6.0.0"
-  parse_next: ^0.1.0
+  parse_next: ^0.2.0
   source_gen: ^4.0.1
 
 dev_dependencies:
