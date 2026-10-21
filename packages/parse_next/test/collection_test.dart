@@ -94,7 +94,7 @@ void main() {
         'set File',
         (o) => [o.attachment.set(const ParseFile(name: 'f.txt', url: 'u'))],
         {
-          'attachment': {'__type': 'File', 'name': 'f.txt'},
+          'attachment': {'__type': 'File', 'name': 'f.txt', 'url': 'u'},
         },
       ),
       (
@@ -202,7 +202,7 @@ void main() {
       test(name, () async {
         final s = Server();
         expect(
-          await s.posts.update('p 1', build),
+          (await s.posts.update('p 1', build)).updatedAt,
           DateTime.utc(2024, 1, 2, 3, 4, 5, 678),
         );
         expect(s.only.method, 'PUT');
@@ -319,6 +319,144 @@ void main() {
       expect(doc.acl, isNull);
     });
   });
+
+  group('UpdateResult.applyTo', () {
+    final before = Doc<Post>(
+      id: 'p1',
+      createdAt: DateTime.utc(2024),
+      updatedAt: DateTime.utc(2024),
+      acl: null,
+      data: Post(
+        title: 'a',
+        slug: 's',
+        count: 1,
+        tags: const ['x'],
+        meta: const Json({'n': 1, 'keep': true, 'gone': 1}),
+      ),
+    );
+
+    test('the values sent, then what the server reported', () async {
+      final s = Server({
+        'updatedAt': updatedAt,
+        'count': 3,
+        'tags': ['x', 'y'],
+        'title': 'B',
+        'meta': {'n': 2},
+      });
+      final result = await s.posts.update(
+        'p1',
+        (o) => [
+          o.title.set('b'),
+          o.slug.unset(),
+          o.count.increment(2),
+          o.tags.addUnique(['y']),
+          o.meta.incrementKey('n', 1),
+        ],
+      );
+      expect(s.body, {
+        'title': 'b',
+        'slug': delete,
+        'count': {'__op': 'Increment', 'amount': 2},
+        'tags': {
+          '__op': 'AddUnique',
+          'objects': ['y'],
+        },
+        'meta.n': {'__op': 'Increment', 'amount': 1},
+      });
+      final after = result.applyTo(before);
+      expect(after.id, 'p1');
+      expect(after.createdAt, before.createdAt);
+      expect(after.updatedAt, DateTime.parse(updatedAt));
+      expect(
+        after.data.view,
+        Post(
+          title: 'B',
+          count: 3,
+          tags: const ['x', 'y'],
+          meta: const Json({'n': 2, 'keep': true, 'gone': 1}),
+        ).view,
+      );
+    });
+
+    test('a map key set or unset without a server value', () async {
+      final set = Server({'updatedAt': updatedAt});
+      final added = (await set.posts.update(
+        'p1',
+        (o) => [o.meta.setKey('k', 'v')],
+      )).applyTo(before);
+      expect(added.data.meta, {'n': 1, 'keep': true, 'gone': 1, 'k': 'v'});
+
+      final unset = Server({'updatedAt': updatedAt});
+      final removed = (await unset.posts.update(
+        'p1',
+        (o) => [o.meta.unsetKey('gone')],
+      )).applyTo(before);
+      expect(removed.data.meta, {'n': 1, 'keep': true});
+    });
+
+    test('a dotted key, or two ops on one map, are rejected', () {
+      final s = Server();
+      expect(
+        () => s.posts.update('p1', (o) => [o.meta.setKey('a.b', 1)]),
+        throwsArgumentError,
+      );
+      for (final List<Op> Function(PostOps) build in [
+        (o) => [o.meta.setKey('a', 1), o.meta.setKey('b', 2)],
+        (o) => [o.meta.setKey('a', 1), o.meta.set({})],
+        (o) => [o.meta.set({}), o.meta.unsetKey('a')],
+      ]) {
+        expect(() => s.posts.update('p1', build), throwsArgumentError);
+      }
+      expect(s.requests, isEmpty);
+    });
+
+    test('replace keeps the ACL unless sent and drops nulls', () async {
+      final s = Server({'updatedAt': updatedAt, 'slug': delete});
+      final acl = const Acl().withPublic();
+      final result = await s.posts.replace(
+        'p1',
+        const Post(title: 'c', slug: 'x'),
+        acl: acl,
+      );
+      final after = result.applyTo(before);
+      expect(after.data.view, const Post(title: 'c').view);
+      expect(after.acl, acl);
+    });
+  });
+
+  test('create sends an id, and context as X-Parse-Cloud-Context', () async {
+    final s = Server({'objectId': 'mine', 'createdAt': updatedAt});
+    final doc = await s.posts.create(
+      const Post(title: 'hi'),
+      id: 'mine',
+      context: {'at': DateTime.utc(2024, 1, 2, 3, 4, 5, 678)},
+    );
+    expect(doc.id, 'mine');
+    expect(s.body, {'title': 'hi', 'objectId': 'mine'});
+    expect(jsonDecode(s.only.headers['X-Parse-Cloud-Context']!), {
+      'at': {'__type': 'Date', 'iso': updatedAt},
+    });
+  });
+
+  test(
+    'a value the server would round is rejected before sending',
+    tags: 'platform',
+    () {
+      final s = Server();
+      // On the web an int past 2^53 cannot exist, so there is nothing to check.
+      for (final v in [
+        if (!identical(0, 0.0)) 9007199254740992,
+        double.nan,
+        double.infinity,
+      ]) {
+        expect(
+          () => s.posts.update('p1', (o) => [o.meta.setKey('n', v)]),
+          throwsArgumentError,
+        );
+      }
+      expect(s.requests, isEmpty);
+    },
+  );
 
   test('get', () async {
     final s = Server({

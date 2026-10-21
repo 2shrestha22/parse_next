@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -81,7 +82,7 @@ void main() {
     });
   });
 
-  group('numbers', () {
+  group('numbers', tags: 'platform', () {
     // jsonDecode gives 2.0 a double on the VM and an int-typed JS number on
     // the web; both must decode the same way.
     final j = parse('{"whole": 2.0, "int": 2, "frac": 1.5}');
@@ -113,7 +114,7 @@ void main() {
     });
   });
 
-  group('Date', () {
+  group('Date', tags: 'platform', () {
     test('decodes the Date object and the plain ISO string', () {
       final j = parse(
         '{"d": {"__type": "Date", "iso": "2024-01-02T03:04:05.678Z"},'
@@ -250,11 +251,82 @@ void main() {
   });
 
   test('ParseFile equality ignores the server-built url', () {
-    const a = ParseFile(name: 'f.txt');
+    const a = ParseFile(name: 'f.txt', url: 'http://y/f.txt');
     const b = ParseFile(name: 'f.txt', url: 'http://x/f.txt');
     expect(a, b);
     expect(a.hashCode, b.hashCode);
-    expect(a, isNot(const ParseFile(name: 'g.txt')));
+    expect(a, isNot(const ParseFile(name: 'g.txt', url: 'http://y/f.txt')));
+  });
+
+  group('map values', () {
+    final date = DateTime.utc(2024, 1, 2, 3, 4, 5, 678);
+    const file = ParseFile(name: 'f.png', url: 'http://x/f.png');
+    final geo = GeoPoint(1, 2);
+    final polygon = Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)]);
+    final value = {
+      'd': date,
+      'list': [geo, 1, 'two', null],
+      'nested': {'f': file, 'p': polygon, 'b': true},
+    };
+    final wire = {
+      'd': encodeDate(date),
+      'list': [geo.toJson(), 1, 'two', null],
+      'nested': {'f': file.toJson(), 'p': polygon.toJson(), 'b': true},
+    };
+
+    test('encode typed values at any depth', () {
+      expect(encodeValue(value), wire);
+    });
+
+    test('decode them back', () {
+      final back =
+          decodeValue(jsonDecode(jsonEncode(wire)))! as Map<String, Object?>;
+      expect(back['d'], date);
+      expect(back['list'], [geo, 1, 'two', null]);
+      expect(back['nested'], {'f': file, 'p': polygon, 'b': true});
+    });
+
+    test('a Pointer or Bytes from the server stays a map', () {
+      const pointer = {'__type': 'Pointer', 'className': 'X', 'objectId': 'x'};
+      expect(decodeValue({'p': pointer}), {'p': pointer});
+    });
+
+    for (final (name, bad) in [
+      ('bytes', Uint8List(1)),
+      ('a __type key', {'__type': 'Date'}),
+      ('an __op key', {'__op': 'Delete'}),
+      ('a Pointer', const Pointer<Object?>('x')),
+      ('another object', Object()),
+    ]) {
+      test('$name is rejected', () {
+        expect(() => encodeValue({'k': bad}), throwsArgumentError);
+      });
+    }
+  });
+
+  group('geo helpers', () {
+    final a = GeoPoint(0, 0);
+    final b = GeoPoint(0, 90);
+    test('distances on the sphere', () {
+      expect(a.radiansTo(b), closeTo(pi / 2, 1e-12));
+      expect(a.kilometersTo(b), closeTo(10007.5, 0.1));
+      expect(a.milesTo(b), closeTo(6218.4, 0.1));
+      expect(a.radiansTo(a), 0);
+    });
+
+    test('Polygon.containsPoint, edges included', () {
+      final square = Polygon([
+        GeoPoint(0, 0),
+        GeoPoint(0, 10),
+        GeoPoint(10, 10),
+        GeoPoint(10, 0),
+      ]);
+      expect(square.containsPoint(GeoPoint(5, 5)), isTrue);
+      expect(square.containsPoint(GeoPoint(0, 5)), isTrue);
+      expect(square.containsPoint(GeoPoint(10, 10)), isTrue);
+      expect(square.containsPoint(GeoPoint(11, 5)), isFalse);
+      expect(square.containsPoint(GeoPoint(5, -1)), isFalse);
+    });
   });
 
   group('Acl', () {

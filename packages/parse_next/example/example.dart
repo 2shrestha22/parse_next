@@ -45,6 +45,8 @@ Future<void> main() async {
       switch (event) {
         case Subscribed():
           print('subscribed');
+        case Disconnected():
+          print('disconnected');
         case Created(:final doc) || Updated(:final doc) || Entered(:final doc):
           print('${doc.data.title}: ${doc.data.likes} likes');
         case Left(:final doc) || Deleted(:final doc):

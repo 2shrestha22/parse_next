@@ -46,7 +46,7 @@ final class PostFields extends Fields<Post> {
   StringField<Post> get title => const StringField('title');
   ComparableField<Post, int> get likes => const ComparableField('likes');
   ListField<Post, String> get tags => const ListField('tags');
-  PointerField<Post, User> get author =>
+  PointerField<Post, User, UserFields> get author =>
       const PointerField('author', $UserSchema());
 }
 

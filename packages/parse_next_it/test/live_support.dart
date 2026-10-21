@@ -16,6 +16,7 @@ Future<void> resetSignals(Backend backend) => backend.resetClass('Signal', {
   'at': {'type': 'Date'},
   'place': {'type': 'GeoPoint'},
   'links': {'type': 'Array'},
+  'file': {'type': 'File'},
 });
 
 String unique(String name) => '$name-${DateTime.now().microsecondsSinceEpoch}';
@@ -26,7 +27,7 @@ String? idOf(LiveEvent<Signal> e) => switch (e) {
   Updated(:final doc) ||
   Left(:final doc) ||
   Deleted(:final doc) => doc.id,
-  Subscribed() => null,
+  Subscribed() || Disconnected() => null,
 };
 
 /// Everything a live stream emits, kept for later checks.

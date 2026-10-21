@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -30,8 +31,11 @@ final class ParseClient {
     required this.server,
     required this.appId,
     this.clientKey,
+    this.installationId,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
+    this.attempts = 1,
+    this.idempotency = false,
     SessionStore? sessions,
     Uri? liveQueryServer,
   }) : liveQueryServer =
@@ -47,8 +51,30 @@ final class ParseClient {
   /// Sent as `X-Parse-Client-Key` when set.
   final String? clientKey;
 
-  /// Covers the whole request, from sending to the last byte of the body.
+  /// One per install of the app, kept across runs; the JS SDK uses a random
+  /// UUID. Without it every login adds a session, because the server replaces
+  /// a user's earlier session only for the same installation
+  /// (`destroyDuplicatedSessions` in RestWrite.js). Sent as
+  /// `X-Parse-Installation-Id`: in a browser every request fails its CORS
+  /// preflight unless the server's `allowHeaders` lists it.
+  final String? installationId;
+
+  /// Covers the whole request, from sending to the last byte of the body;
+  /// each retry gets its own.
   final Duration timeout;
+
+  /// How many times a read is tried: with more than 1, a query, `get`,
+  /// `me` and the like are retried after a [NetworkError] or a 502, 503 or
+  /// 504, with the JS SDK's backoff; the JS SDK tries 5 times. A write is
+  /// retried only with [idempotency].
+  final int attempts;
+
+  /// Sends every create and update with an `X-Parse-Request-Id` that its
+  /// retries repeat, and retries it like a read. A server with
+  /// `idempotencyOptions` covering the route then applies it once and
+  /// answers a repeat with 159 `Duplicate request`; without that option a
+  /// retried write can apply twice.
+  final bool idempotency;
 
   /// Where [Query.live] connects: [server] with `ws` or `wss` unless set,
   /// for a LiveQuery server on another host.
@@ -97,21 +123,67 @@ final class ParseClient {
   /// [contentType]; an extension the server does not know is served as
   /// `Content-Type: false` (`getHandler` in FilesRouter.js). File URLs use
   /// the server's `publicServerURL` when it is set, else the request host.
+  ///
+  /// [metadata] and [tags] reach a `beforeSave(Parse.File)` trigger and the
+  /// files adapter, which on GridFS stores them with the file. [onProgress]
+  /// is called as the bytes are sent, and completing [cancel] aborts the
+  /// upload with a [NetworkError]. Uploads are never retried.
   Future<ParseFile> uploadFile(
     Uint8List bytes, {
     required String name,
     required String contentType,
+    Map<String, String>? metadata,
+    Map<String, String>? tags,
+    void Function(int sent, int total)? onProgress,
+    Future<void>? cancel,
   }) async {
-    final response = await request(
-      this,
-      'POST',
-      '/files/${Uri.encodeComponent(name)}',
-      raw: (bytes: bytes, contentType: contentType),
+    final streamed = metadata != null || tags != null;
+    final response = Json(
+      await _request<Map<String, Object?>>(
+        this,
+        'POST',
+        '/files/${Uri.encodeComponent(name)}',
+        raw: (
+          bytes: bytes,
+          contentType: contentType,
+          onProgress: onProgress,
+          cancel: cancel,
+          // Only a streamed upload reads metadata and tags, from these
+          // headers (`createHandler` in FilesRouter.js).
+          headers: {
+            if (streamed) 'X-Parse-Upload-Mode': 'stream',
+            if (metadata != null) 'X-Parse-File-Metadata': jsonEncode(metadata),
+            if (tags != null) 'X-Parse-File-Tags': jsonEncode(tags),
+          },
+        ),
+      ),
     );
     return ParseFile(
       name: response.require<String>('name'),
       url: response.require<String>('url'),
     );
+  }
+
+  /// The bytes of [file], fetched from its URL without Parse headers, as
+  /// a browser would.
+  Future<Uint8List> downloadFile(ParseFile file) async {
+    final response = await _send(
+      this,
+      (abort) => http.AbortableRequest(
+        'GET',
+        Uri.parse(file.url),
+        abortTrigger: abort,
+      ),
+      null,
+    );
+    if (response.statusCode != 200) {
+      throw OtherParseError(
+        'GET ${file.url}: HTTP ${response.statusCode}',
+        code: null,
+        status: response.statusCode,
+      );
+    }
+    return response.bodyBytes;
   }
 
   /// Items run concurrently on the server, in no set order, and each
@@ -175,17 +247,17 @@ final class ParseClient {
 /// [path] starts with `/` and is relative to [ParseClient.server].
 ///
 /// Sends [sessionToken], or the stored session's when it is null and
-/// [stored] is true. [raw] is sent as the body instead of [body], with its
-/// content type.
+/// [stored] is true. [context] reaches the triggers the request runs as
+/// `request.context`.
 Future<Json> request(
   ParseClient client,
   String method,
   String path, {
   Map<String, String>? query,
   Json? body,
-  ({Uint8List bytes, String contentType})? raw,
   String? sessionToken,
   bool stored = true,
+  Map<String, Object?>? context,
 }) async => Json(
   await _request<Map<String, Object?>>(
     client,
@@ -193,9 +265,9 @@ Future<Json> request(
     path,
     query: query,
     body: body,
-    raw: raw,
     sessionToken: sessionToken,
     stored: stored,
+    context: context,
   ),
 );
 
@@ -205,46 +277,141 @@ Future<T> _request<T extends Object>(
   String path, {
   Map<String, String>? query,
   Json? body,
-  ({Uint8List bytes, String contentType})? raw,
+  _Raw? raw,
   String? sessionToken,
   bool stored = true,
   bool persistent = true,
+  Map<String, Object?>? context,
 }) async {
   if (sessionToken == null && stored) {
     sessionToken = (await client._session())?.token;
   }
-  final timedOut = Completer<void>();
-  final timer = Timer(client.timeout, timedOut.complete);
-  final req = http.AbortableRequest(
-    method,
-    client.server.replace(
+  final Uint8List? json;
+  if (body != null) {
+    _checkNumbers(body, 'body');
+    json = utf8.encode(jsonEncode(body));
+  } else {
+    json = null;
+  }
+  final read = method == 'GET' || body?['_method'] == 'GET';
+  final idempotent =
+      !read &&
+      raw == null &&
+      client.idempotency &&
+      (method == 'POST' || method == 'PUT');
+  final requestId = idempotent ? _randomId() : null;
+
+  http.BaseRequest build(Future<void> abort) {
+    final url = client.server.replace(
       path: '${client._mount}$path',
       queryParameters: query,
-    ),
-    abortTrigger: timedOut.future,
-  )..persistentConnection = persistent;
-  req.headers['X-Parse-Application-Id'] = client.appId;
-  if (client.clientKey case final key?) req.headers['X-Parse-Client-Key'] = key;
-  if (sessionToken != null) req.headers['X-Parse-Session-Token'] = sessionToken;
-  if (raw != null) {
-    req.headers['Content-Type'] = raw.contentType;
-    req.bodyBytes = raw.bytes;
-  } else if (body != null) {
-    // Through bodyBytes: the `body` setter appends `; charset=utf-8`.
-    req.headers['Content-Type'] = 'application/json';
-    req.bodyBytes = utf8.encode(jsonEncode(body));
+    );
+    final http.BaseRequest req;
+    if (raw != null) {
+      req = _Upload(method, url, raw, abort)
+        ..headers.addAll(raw.headers)
+        ..headers['Content-Type'] = raw.contentType;
+    } else {
+      req = http.AbortableRequest(method, url, abortTrigger: abort);
+      if (json != null) {
+        // Through bodyBytes: the `body` setter appends `; charset=utf-8`.
+        (req as http.Request).bodyBytes = json;
+        req.headers['Content-Type'] = 'application/json';
+      }
+    }
+    req.persistentConnection = persistent;
+    req.headers['X-Parse-Application-Id'] = client.appId;
+    // Not `parse-next0.2.0`: the server parses letters followed by digits as
+    // an SDK it knows, and for an unknown one leaves out the `Delete` of a
+    // field a trigger unset (`supportsForwardDelete` in ClientSDK.js).
+    req.headers['X-Parse-Client-Version'] = 'parse-next/$_packageVersion';
+    if (client.clientKey case final key?) {
+      req.headers['X-Parse-Client-Key'] = key;
+    }
+    if (client.installationId case final id?) {
+      req.headers['X-Parse-Installation-Id'] = id;
+    }
+    if (sessionToken != null) {
+      req.headers['X-Parse-Session-Token'] = sessionToken;
+    }
+    if (requestId != null) req.headers['X-Parse-Request-Id'] = requestId;
+    if (context != null) {
+      // A header, not `_context` in the body: the server reads that only
+      // from a request that carries its app id in the body too
+      // (middlewares.js).
+      req.headers['X-Parse-Cloud-Context'] = jsonEncode(encodeValue(context));
+    }
+    return req;
   }
 
-  final http.Response response;
+  for (var attempt = 1; ; attempt++) {
+    final retry = (read || idempotent) && attempt < client.attempts;
+    final http.Response response;
+    try {
+      response = await _send(client, build, raw?.cancel);
+    } on NetworkError catch (e) {
+      if (!retry || e.message == _cancelled) rethrow;
+      await _backoff(attempt);
+      continue;
+    }
+    if (retry && const {502, 503, 504}.contains(response.statusCode)) {
+      await _backoff(attempt);
+      continue;
+    }
+    return _decode<T>(client, response, sessionToken, path);
+  }
+}
+
+typedef _Raw = ({
+  Uint8List bytes,
+  String contentType,
+  void Function(int sent, int total)? onProgress,
+  Future<void>? cancel,
+  Map<String, String> headers,
+});
+
+/// Sent as `X-Parse-Client-Version`; kept equal to the pubspec version by a
+/// test.
+const _packageVersion = '0.2.0';
+
+const _cancelled = 'cancelled';
+
+/// The JS SDK's backoff: a random delay up to 125 ms times 2^[attempt].
+Future<void> _backoff(int attempt) => Future.delayed(
+  Duration(milliseconds: Random().nextInt(125 * (1 << attempt) + 1)),
+);
+
+String _randomId() {
+  final random = Random.secure();
+  return [
+    for (var i = 0; i < 16; i++)
+      random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
+}
+
+Future<http.Response> _send(
+  ParseClient client,
+  http.BaseRequest Function(Future<void> abort) build,
+  Future<void>? cancel,
+) async {
+  final timedOut = Completer<void>();
+  final timer = Timer(client.timeout, timedOut.complete);
+  var cancelled = false;
+  final abort = Future.any([
+    timedOut.future,
+    if (cancel != null) cancel.then((_) => cancelled = true),
+  ]);
   try {
     // The abort frees the connection on IOClient and BrowserClient; the
     // timeout still covers clients that ignore abortTrigger, like MockClient.
-    response = await client._http
-        .send(req)
+    return await client._http
+        .send(build(abort))
         .then(http.Response.fromStream)
         .timeout(client.timeout);
   } on http.RequestAbortedException {
-    throw NetworkError('no response within ${client.timeout}');
+    throw NetworkError(
+      cancelled ? _cancelled : 'no response within ${client.timeout}',
+    );
   } on http.ClientException catch (e) {
     throw NetworkError(e.message);
   } on TimeoutException {
@@ -252,7 +419,43 @@ Future<T> _request<T extends Object>(
   } finally {
     timer.cancel();
   }
+}
 
+/// Sends its bytes in chunks as the connection takes them, so that
+/// [_Raw.onProgress] follows what was sent.
+final class _Upload extends http.BaseRequest implements http.Abortable {
+  _Upload(super.method, super.url, this._raw, this.abortTrigger) {
+    contentLength = _raw.bytes.length;
+  }
+
+  final _Raw _raw;
+
+  @override
+  final Future<void> abortTrigger;
+
+  @override
+  http.ByteStream finalize() {
+    super.finalize();
+    return http.ByteStream(_chunks());
+  }
+
+  Stream<List<int>> _chunks() async* {
+    const size = 64 * 1024;
+    final total = _raw.bytes.length;
+    for (var start = 0; start < total; start += size) {
+      final end = min(start + size, total);
+      yield Uint8List.sublistView(_raw.bytes, start, end);
+      _raw.onProgress?.call(end, total);
+    }
+  }
+}
+
+Future<T> _decode<T extends Object>(
+  ParseClient client,
+  http.Response response,
+  String? sessionToken,
+  String path,
+) async {
   // Not response.body: without a charset it decodes as latin1, and the
   // unauthorized response has no Content-Type at all (middlewares.js
   // invalidRequest).
@@ -289,6 +492,29 @@ Future<T> _request<T extends Object>(
   throw _exception(code, message, status, path);
 }
 
+/// On the web every number is a double already, so an int is never larger.
+const _web = identical(0, 0.0);
+const _maxSafeInt = 9007199254740991;
+
+/// JSON has no NaN or infinity, and the server keeps numbers as JS doubles,
+/// which store an int past 2^53 rounded, without an error.
+void _checkNumbers(Object? v, String path) {
+  switch (v) {
+    case double() when !v.isFinite:
+      throw ArgumentError.value(v, path, 'cannot be sent as JSON');
+    case int() when !_web && (v > _maxSafeInt || v < -_maxSafeInt):
+      throw ArgumentError.value(v, path, 'is past 2^53 and would be rounded');
+    case Map<String, Object?>():
+      for (final MapEntry(:key, :value) in v.entries) {
+        _checkNumbers(value, '$path.$key');
+      }
+    case List<Object?>():
+      for (var i = 0; i < v.length; i++) {
+        _checkNumbers(v[i], '$path[$i]');
+      }
+  }
+}
+
 int _statusOf(int? code) => switch (code) {
   1 => 500,
   101 => 404,
@@ -297,7 +523,8 @@ int _statusOf(int? code) => switch (code) {
 
 ParseException _exception(int? code, String message, int status, String path) =>
     switch (code) {
-      101 when path == '/login' => InvalidCredentials(message, status: status),
+      101 when path == '/login' || path == '/verifyPassword' =>
+        InvalidCredentials(message, status: status),
       101 => ObjectNotFound(message, status: status),
       137 => DuplicateValue(message, status: status),
       141 => ScriptFailed(message, status: status),

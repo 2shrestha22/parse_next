@@ -17,11 +17,6 @@
         "write": true
       }
     },
-    "authData": {
-      "anonymous": {
-        "id": "capture-anonymous"
-      }
-    },
     "authDataResponse": {},
     "createdAt": "2000-01-01T00:00:00.000Z",
     "objectId": "obj0000009",

@@ -11,6 +11,8 @@ final class AuthorFields extends Fields<Author> {
   const AuthorFields();
 
   StringField<Author> get name => const StringField('name');
+  PointerField<Author, Author, AuthorFields> get mentor =>
+      const PointerField('mentor', authorSchema);
 }
 
 final class AuthorOps {
@@ -113,17 +115,17 @@ final class PostFields extends Fields<Post> {
   Field<Post, bool> get published => const Field('published');
   DateField<Post> get publishedAt => const DateField('publishedAt');
   ListField<Post, String> get tags => const ListField('tags');
-  ExistsField<Post> get meta => const ExistsField('meta');
+  MapField<Post> get meta => const MapField('meta');
   GeoField<Post> get location => const GeoField('location');
-  ExistsField<Post> get area => const ExistsField('area');
-  ExistsField<Post> get attachment => const ExistsField('attachment');
+  PolygonField<Post> get area => const PolygonField('area');
+  FileField<Post> get attachment => const FileField('attachment');
   ExistsField<Post> get data => const ExistsField('data');
-  PointerField<Post, Author> get author =>
+  PointerField<Post, Author, AuthorFields> get author =>
       const PointerField('author', authorSchema);
-  PointerListField<Post, Author> get coauthors =>
+  PointerListField<Post, Author, AuthorFields> get coauthors =>
       PointerListField('coauthors', authorSchema);
   RelationField<Post, Author> get followers =>
-      const RelationField('followers', postSchema);
+      const RelationField('followers', postSchema, authorSchema);
 }
 
 final class PostOps {
@@ -139,7 +141,7 @@ final class PostOps {
   NullableSetOps<DateTime> get publishedAt =>
       const NullableSetOps('publishedAt', encodeDate);
   NullableListOps<String> get tags => const NullableListOps('tags');
-  NullableSetOps<Json> get meta => const NullableSetOps('meta');
+  NullableMapOps get meta => const NullableMapOps('meta');
   NullableSetOps<GeoPoint> get location =>
       NullableSetOps('location', (v) => v.toJson());
   NullableSetOps<Polygon> get area => NullableSetOps('area', (v) => v.toJson());

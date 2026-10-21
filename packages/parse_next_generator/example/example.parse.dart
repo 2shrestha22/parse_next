@@ -47,10 +47,10 @@ final class PostFields extends Fields<Post> {
   Field<Post, Status> get status => Field('status', (v) => v.name);
   DateField<Post> get publishedAt => const DateField('publishedAt');
   GeoField<Post> get location => const GeoField('location');
-  PointerField<Post, User> get author =>
+  PointerField<Post, User, UserFields> get author =>
       const PointerField('author', $UserSchema());
   RelationField<Post, User> get followers =>
-      const RelationField('followers', $PostSchema());
+      const RelationField('followers', $PostSchema(), $UserSchema());
 }
 
 final class PostOps {

@@ -78,6 +78,7 @@ final class FakeServer {
 Future<ParseClient> client(
   FakeServer server, {
   String? clientKey,
+  String? installationId,
   String? token,
 }) async {
   final sessions = InMemorySessionStore();
@@ -90,6 +91,7 @@ Future<ParseClient> client(
     server: server.url,
     appId: 'app',
     clientKey: clientKey,
+    installationId: installationId,
     sessions: sessions,
   );
   addTearDown(c.close);
@@ -112,7 +114,12 @@ void main() {
   });
 
   test('connect, subscribe and unsubscribe send exact frames', () async {
-    final c = await client(server, clientKey: 'ck', token: 'r:tok');
+    final c = await client(
+      server,
+      clientKey: 'ck',
+      installationId: 'iid',
+      token: 'r:tok',
+    );
     final posts = c.collection(postSchema);
     final events = started(posts.where((f) => f.title.eq('a')).live());
 
@@ -120,7 +127,8 @@ void main() {
     expect(server.paths, ['/parse']);
     expect(
       await conn.next(),
-      '{"op":"connect","applicationId":"app","clientKey":"ck"}',
+      '{"op":"connect","applicationId":"app","clientKey":"ck",'
+      '"installationId":"iid"}',
     );
     conn.send({'op': 'connected', 'clientId': 'c'});
     expect(
@@ -245,6 +253,7 @@ void main() {
     await first.subscribed();
     expect(await events.next, isA<Subscribed<Post>>());
     await first.socket.close();
+    expect(await events.next, isA<Disconnected<Post>>());
 
     final second = await server.connections.next;
     expect(await second.next(), '{"op":"connect","applicationId":"app"}');
@@ -286,6 +295,7 @@ void main() {
         'requestId': 1,
         'object': object('x'),
       });
+      expect(await events.next, isA<Disconnected<Post>>());
       expect(await events.next, isA<Subscribed<Post>>());
       expect(await events.next, isA<Created<Post>>());
       await events.cancel();
@@ -430,6 +440,7 @@ void main() {
       ),
       ('limit', (Query<Post, PostFields, PostOps> q) => q.limit(1)),
       ('skip', (Query<Post, PostFields, PostOps> q) => q.skip(1)),
+      ('an option', (Query<Post, PostFields, PostOps> q) => q.includeAll()),
     ]) {
       test('$name with StateError', () {
         expect(() => build(query).live(), throwsStateError);
@@ -452,12 +463,72 @@ void main() {
       ('updatedAt', (f) => f.updatedAt.eq(date)),
       ('contains on a pointer list', (f) => f.coauthors.contains(Pointer('x'))),
       ('an empty containsAll', (f) => f.tags.containsAll([])),
+      ('containsAllStartingWith', (f) => f.tags.containsAllStartingWith(['a'])),
+      ('oneOf on a date', (f) => f.publishedAt.oneOf([date])),
+      ('noneOf on a date', (f) => f.publishedAt.noneOf([date])),
       ('nested in |', (f) => f.title.eq('a') | f.title.fullText('word')),
+      (
+        'notMatchesQuery',
+        (f) => f.author.notMatchesQuery(
+          ParseClient(
+            server: Uri.parse('http://h/parse'),
+            appId: 'a',
+          ).collection(authorSchema).query(),
+        ),
+      ),
+      (
+        'matchesKey',
+        (f) => f.title.matchesKey(
+          ParseClient(
+            server: Uri.parse('http://h/parse'),
+            appId: 'a',
+          ).collection(authorSchema).query(),
+          (a) => a.name,
+        ),
+      ),
+      (
+        'notMatchesKey nested in ~',
+        (f) => ~f.title.notMatchesKey(
+          ParseClient(
+            server: Uri.parse('http://h/parse'),
+            appId: 'a',
+          ).collection(authorSchema).query(),
+          (a) => a.name,
+        ),
+      ),
     ]) {
       test('$name with ArgumentError', () {
         expect(() => query.where(cond).live(), throwsArgumentError);
       });
     }
+
+    test('watch and nor are sent, with range guards inside nor', () async {
+      final c = await client(server);
+      final events = started(
+        c
+            .collection(postSchema)
+            .where((f) => ~f.count.gt(1))
+            .live(watch: (f) => [f.title, f.count]),
+      );
+      final conn = await server.connections.next;
+      await conn.accept();
+      expect(await conn.nextJson(), {
+        'op': 'subscribe',
+        'requestId': 1,
+        'query': {
+          'className': 'Post',
+          'where': {
+            r'$nor': [
+              {
+                'count': {r'$exists': true, r'$gt': 1},
+              },
+            ],
+          },
+          'watch': ['title', 'count'],
+        },
+      });
+      await events.cancel(immediate: true);
+    });
 
     test('RelationField.of with ArgumentError', () async {
       final authors = (await client(server)).collection(authorSchema);

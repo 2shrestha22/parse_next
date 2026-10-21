@@ -22,13 +22,21 @@ final class Recorder {
     return respond();
   });
 
-  ParseClient parse({String? clientKey, Uri? server}) => ParseClient(
-    server: server ?? Uri.parse('http://parse.test/parse'),
-    appId: 'app',
-    clientKey: clientKey,
-    httpClient: client,
-  );
+  ParseClient parse({String? clientKey, String? installationId, Uri? server}) =>
+      ParseClient(
+        server: server ?? Uri.parse('http://parse.test/parse'),
+        appId: 'app',
+        clientKey: clientKey,
+        installationId: installationId,
+        httpClient: client,
+      );
 }
+
+final requestIds = <String?>[];
+
+/// `X-Parse-Client-Version` is checked against the pubspec in version_test.
+Map<String, String> withoutVersion(Map<String, String> headers) =>
+    {...headers}..remove('X-Parse-Client-Version');
 
 Future<ParseException> failure(Future<Json> call) async {
   try {
@@ -41,25 +49,27 @@ Future<ParseException> failure(Future<Json> call) async {
 
 void main() {
   group('headers', () {
-    for (final clientKey in [null, 'ck']) {
+    for (final (clientKey, installationId) in [(null, null), ('ck', 'iid')]) {
       for (final sessionToken in [null, 'r:token']) {
         for (final body in [
           null,
           Json({'a': 1}),
         ]) {
-          test('clientKey: $clientKey, sessionToken: $sessionToken, '
+          test('clientKey: $clientKey, installationId: $installationId, '
+              'sessionToken: $sessionToken, '
               'body: ${body != null}', () async {
             final rec = Recorder();
             await request(
-              rec.parse(clientKey: clientKey),
+              rec.parse(clientKey: clientKey, installationId: installationId),
               'POST',
               '/x',
               body: body,
               sessionToken: sessionToken,
             );
-            expect(rec.requests.single.headers, {
+            expect(withoutVersion(rec.requests.single.headers), {
               'X-Parse-Application-Id': 'app',
               'X-Parse-Client-Key': ?clientKey,
+              'X-Parse-Installation-Id': ?installationId,
               'X-Parse-Session-Token': ?sessionToken,
               if (body != null) 'Content-Type': 'application/json',
             });
@@ -180,6 +190,78 @@ void main() {
     });
   });
 
+  group('retries', () {
+    ParseClient flaky(List<Object> answers, {bool idempotency = false}) =>
+        ParseClient(
+          server: server,
+          appId: 'app',
+          attempts: 5,
+          idempotency: idempotency,
+          httpClient: MockClient((r) async {
+            requestIds.add(r.headers['X-Parse-Request-Id']);
+            return switch (answers.removeAt(0)) {
+              final int status => http.Response('{}', status),
+              _ => throw http.ClientException('Connection reset', r.url),
+            };
+          }),
+        );
+
+    setUp(requestIds.clear);
+
+    test('a read is retried after a NetworkError, 502, 503 and 504', () async {
+      final answers = <Object>['reset', 502, 503, 504, 200];
+      await request(flaky(answers), 'GET', '/x');
+      expect(answers, isEmpty);
+    });
+
+    test('a query sent as a POST is a read', () async {
+      final answers = <Object>[503, 200];
+      await request(
+        flaky(answers),
+        'POST',
+        '/classes/Post',
+        body: Json({'_method': 'GET'}),
+      );
+      expect(answers, isEmpty);
+    });
+
+    test('a read gives up after attempts tries', () async {
+      final answers = <Object>[503, 503, 503, 503, 503, 200];
+      expect(
+        await failure(request(flaky(answers), 'GET', '/x')),
+        isA<OtherParseError>().having((e) => e.status, 'status', 503),
+      );
+      expect(answers, [200]);
+    });
+
+    test('a 500 is not retried', () async {
+      final answers = <Object>[500, 200];
+      await failure(request(flaky(answers), 'GET', '/x'));
+      expect(answers, [200]);
+    });
+
+    test('a write is not retried without idempotency', () async {
+      final answers = <Object>['reset', 200];
+      await failure(request(flaky(answers), 'POST', '/x', body: Json({})));
+      expect(answers, [200]);
+      expect(requestIds, [null]);
+    });
+
+    test('with idempotency a write is retried with one request id', () async {
+      final answers = <Object>['reset', 503, 200];
+      await request(
+        flaky(answers, idempotency: true),
+        'PUT',
+        '/x',
+        body: Json({}),
+      );
+      expect(answers, isEmpty);
+      expect(requestIds, hasLength(3));
+      expect(requestIds.toSet(), hasLength(1));
+      expect(requestIds.first, matches(RegExp(r'^[0-9a-f]{32}$')));
+    });
+  });
+
   group('NetworkError', () {
     test('a ClientException', () async {
       var calls = 0;
@@ -198,19 +280,20 @@ void main() {
       expect(calls, 1);
     });
 
-    test('a timeout', () async {
+    test('a timeout, once per attempt', () async {
       var calls = 0;
       final client = ParseClient(
         server: server,
         appId: 'app',
         timeout: const Duration(milliseconds: 10),
+        attempts: 2,
         httpClient: MockClient((_) {
           calls++;
           return Completer<http.Response>().future;
         }),
       );
       expect(await failure(request(client, 'GET', '/x')), isA<NetworkError>());
-      expect(calls, 1);
+      expect(calls, 2);
     });
 
     test('a timeout aborts the request', () async {

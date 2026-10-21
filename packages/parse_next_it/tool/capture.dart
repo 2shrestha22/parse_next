@@ -100,7 +100,11 @@ class _Capture {
       },
       'author': authors[0],
       'coauthors': authors,
-      'attachment': {'__type': 'File', 'name': upload['name']},
+      'attachment': {
+        '__type': 'File',
+        'name': upload['name'],
+        'url': upload['url'],
+      },
       'location': {'__type': 'GeoPoint', 'latitude': 27.7, 'longitude': 85.3},
       'area': {
         '__type': 'Polygon',

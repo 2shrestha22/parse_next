@@ -12,9 +12,25 @@ final class Collection<T, F, O> {
   /// Null fields are left out. The returned [Doc] includes the fields a
   /// `beforeSave` trigger changed, and its [Doc.updatedAt] is
   /// [Doc.createdAt], since the create response carries no `updatedAt`.
-  Future<Doc<T>> create(T value, {Acl? acl}) async {
-    final body = _createBody(value, acl);
-    final response = await request(_client, 'POST', _path, body: body);
+  ///
+  /// [id] is the new object's id, which the server accepts only with
+  /// `allowCustomObjectId`. [context] reaches the triggers as
+  /// `request.context`; in a browser it is sent only when the server's
+  /// `allowHeaders` lists `X-Parse-Cloud-Context`.
+  Future<Doc<T>> create(
+    T value, {
+    Acl? acl,
+    String? id,
+    Map<String, Object?>? context,
+  }) async {
+    final body = _createBody(value, acl, id);
+    final response = await request(
+      _client,
+      'POST',
+      _path,
+      body: body,
+      context: context,
+    );
     return _createdDoc(body, response);
   }
 
@@ -26,28 +42,49 @@ final class Collection<T, F, O> {
       Doc.decode(await request(_client, 'GET', _object(id)), _schema);
 
   /// Sends the ops in one request, which the server applies atomically.
-  /// Returns the new `updatedAt`.
-  Future<DateTime> update(String id, List<Op> Function(O ops) build) async {
+  Future<UpdateResult<T>> update(
+    String id,
+    List<Op> Function(O ops) build, {
+    Map<String, Object?>? context,
+  }) async {
     final body = _updateBody(build);
-    final response = await request(_client, 'PUT', _object(id), body: body);
-    return response.require<DateTime>('updatedAt');
+    final response = await request(
+      _client,
+      'PUT',
+      _object(id),
+      body: body,
+      context: context,
+    );
+    return UpdateResult._(_schema, body, response);
   }
 
   /// Overwrites every field except relations; the ACL changes only when
-  /// [acl] is given. Returns the new `updatedAt`.
-  Future<DateTime> replace(String id, T value, {Acl? acl}) async {
+  /// [acl] is given.
+  Future<UpdateResult<T>> replace(
+    String id,
+    T value, {
+    Acl? acl,
+    Map<String, Object?>? context,
+  }) async {
     final body = _replaceBody(value, acl);
-    final response = await request(_client, 'PUT', _object(id), body: body);
-    return response.require<DateTime>('updatedAt');
+    final response = await request(
+      _client,
+      'PUT',
+      _object(id),
+      body: body,
+      context: context,
+    );
+    return UpdateResult._(_schema, body, response);
   }
 
-  Future<void> delete(String id) async {
-    await request(_client, 'DELETE', _object(id));
+  Future<void> delete(String id, {Map<String, Object?>? context}) async {
+    await request(_client, 'DELETE', _object(id), context: context);
   }
 
-  Json _createBody(T value, Acl? acl) => Json({
+  Json _createBody(T value, Acl? acl, [String? id]) => Json({
     ..._withoutNulls(_schema.encode(value)),
     if (acl != null) 'ACL': acl.toJson(),
+    'objectId': ?id,
   });
 
   Doc<T> _createdDoc(Json sent, Json response) =>
@@ -57,9 +94,16 @@ final class Collection<T, F, O> {
     final ops = build(_schema.ops);
     if (ops.isEmpty) throw ArgumentError.value(ops, 'build', 'returned no ops');
     final body = Json({});
+    // Fields with a `MapOps` key op, which takes the whole field.
+    final maps = <String>{};
     for (final op in ops) {
-      if (body.containsKey(op._key)) {
-        throw ArgumentError.value(op._key, 'build', 'has two ops on one key');
+      final dot = op._key.indexOf('.');
+      final field = dot < 0 ? op._key : op._key.substring(0, dot);
+      final clash = dot < 0
+          ? body.containsKey(field) || maps.contains(field)
+          : body.containsKey(field) || !maps.add(field);
+      if (clash) {
+        throw ArgumentError.value(op._key, 'build', 'has two ops on one field');
       }
       body[op._key] = op._json;
     }
@@ -88,6 +132,104 @@ Json _created(Json sent, Json response) => Json(
     // (`_updateResponseWithData` in parse-server's RestWrite.js).
     ..removeWhere((_, v) => v is Map<String, Object?> && v['__op'] == 'Delete'),
 );
+
+/// What [Collection.update] or [Collection.replace] changed.
+final class UpdateResult<T> {
+  UpdateResult._(this._schema, this._sent, Json response)
+    : updatedAt = response.require<DateTime>('updatedAt'),
+      _response = response;
+
+  final ParseSchema<T, Object?, Object?> _schema;
+  final Json _sent;
+  final Json _response;
+  final DateTime updatedAt;
+
+  /// [doc] after this change: the values sent, then the values the server
+  /// reported, which are the results of `increment`, `add`, `addUnique` and
+  /// `remove` and every field a `beforeSave` trigger changed.
+  Doc<T> applyTo(Doc<T> doc) {
+    final json = <String, Object?>{
+      ..._schema.encode(doc.data),
+      if (doc.acl case final acl?) 'ACL': acl.toJson(),
+    };
+    for (final MapEntry(:key, :value) in _sent.entries) {
+      switch (value) {
+        case {'__op': 'Delete'}:
+          _put(json, key, null);
+        // Any other op's result comes back in the response; a relation op's
+        // has no value to keep.
+        case {'__op': _}:
+          break;
+        default:
+          _put(json, key, value);
+      }
+    }
+    // After `meta.n` the server reports `{"meta": {"n": 3}}`, only the leaves
+    // that changed, not the whole map.
+    final dotted = {
+      for (final k in _sent.keys)
+        if (k.contains('.')) k.substring(0, k.indexOf('.')),
+    };
+    for (final MapEntry(:key, :value) in _response.entries) {
+      if (key == 'updatedAt') continue;
+      if ((dotted.contains(key), json[key], value) case (
+        true,
+        final Map<String, Object?> old,
+        final Map<String, Object?> leaves,
+      )) {
+        json[key] = _merge(old, leaves);
+      } else {
+        _put(
+          json,
+          key,
+          value is Map && value['__op'] == 'Delete' ? null : value,
+        );
+      }
+    }
+    return Doc.decode(
+      Json({
+        ...json,
+        'objectId': doc.id,
+        'createdAt': doc.createdAt.toIso8601String(),
+        'updatedAt': _response['updatedAt'],
+      }),
+      _schema,
+    );
+  }
+}
+
+Map<String, Object?> _merge(
+  Map<String, Object?> old,
+  Map<String, Object?> leaves,
+) => {
+  ...old,
+  for (final MapEntry(:key, :value) in leaves.entries)
+    key: switch ((old[key], value)) {
+      (final Map<String, Object?> o, final Map<String, Object?> l) => _merge(
+        o,
+        l,
+      ),
+      _ => value,
+    },
+};
+
+/// Sets [value] at [key], which may be a dotted path into a map field, where
+/// null removes the key as the server does.
+void _put(Map<String, Object?> json, String key, Object? value) {
+  final path = key.split('.');
+  var target = json;
+  for (final step in path.take(path.length - 1)) {
+    target = switch (target[step]) {
+      final Map<String, Object?> m => target[step] = {...m},
+      _ => target[step] = <String, Object?>{},
+    };
+  }
+  if (value == null && path.length > 1) {
+    target.remove(path.last);
+  } else {
+    target[path.last] = value;
+  }
+}
 
 /// One field change for [Collection.update], built from a schema's ops.
 final class Op {
@@ -146,6 +288,33 @@ final class ListOps<E> {
 
 final class NullableListOps<E> extends ListOps<E> {
   const NullableListOps(super._key, [super._encode]);
+
+  Op unset() => Op._(_key, _delete);
+}
+
+/// [setKey], [incrementKey] and [unsetKey] change one top-level key of the
+/// map and leave the rest. Throws [ArgumentError] for a dotted key and, in
+/// `Collection.update`, for two of them on one map: when the class has a
+/// trigger, parse-server 9.9.0 stores a deeper path one level up, and
+/// answers two keys of one map with a 500 on Mongo (the JS SDK expands each
+/// into the whole map, in `_getSaveJSON`).
+final class MapOps extends SetOps<Map<String, Object?>> {
+  const MapOps(String key) : super(key, encodeValue);
+
+  Op setKey(String key, Object? value) => _at(key, encodeValue(value));
+
+  Op incrementKey(String key, num by) =>
+      _at(key, {'__op': 'Increment', 'amount': by});
+
+  Op unsetKey(String key) => _at(key, _delete);
+
+  Op _at(String key, Object? json) => key.isEmpty || key.contains('.')
+      ? throw ArgumentError.value(key, 'key', 'must be one key, without a dot')
+      : Op._('$_key.$key', json);
+}
+
+final class NullableMapOps extends MapOps {
+  const NullableMapOps(super.key);
 
   Op unset() => Op._(_key, _delete);
 }

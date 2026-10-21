@@ -160,7 +160,8 @@ const fixtures = <String, String>{
       },
       "attachment": {
         "__type": "File",
-        "name": "file0001_hello.txt"
+        "name": "file0001_hello.txt",
+        "url": "http://parse.test/parse/files/parse-next-it/file0001_hello.txt"
       },
       "author": {
         "__type": "Pointer",
@@ -523,6 +524,7 @@ const fixtures = <String, String>{
       "className": "Author",
       "objectId": "obj0000003"
     },
+    "className": "Post",
     "coauthors": [
       {
         "__type": "Pointer",
@@ -636,6 +638,7 @@ const fixtures = <String, String>{
       "className": "Author",
       "objectId": "obj0000003"
     },
+    "className": "Post",
     "coauthors": [
       {
         "__type": "Pointer",
@@ -749,6 +752,7 @@ const fixtures = <String, String>{
       "className": "Author",
       "objectId": "obj0000003"
     },
+    "className": "Post",
     "coauthors": [
       {
         "__type": "Pointer",
@@ -817,6 +821,7 @@ const fixtures = <String, String>{
   "response": {
     "attachment": null,
     "author": null,
+    "className": "Post",
     "coauthors": null,
     "count": null,
     "createdAt": "2000-01-01T00:00:00.000Z",
@@ -847,6 +852,7 @@ const fixtures = <String, String>{
     "path": "/classes/Post/obj0000006"
   },
   "response": {
+    "className": "Post",
     "createdAt": "2000-01-01T00:00:00.000Z",
     "followers": {
       "__type": "Relation",
@@ -1135,6 +1141,7 @@ const fixtures = <String, String>{
           "className": "Author",
           "objectId": "obj0000003"
         },
+        "className": "Post",
         "coauthors": [
           {
             "__type": "Pointer",
@@ -1259,6 +1266,7 @@ const fixtures = <String, String>{
           "objectId": "obj0000003",
           "updatedAt": "2000-01-01T00:00:00.000Z"
         },
+        "className": "Post",
         "coauthors": [
           {
             "__type": "Object",
@@ -1365,8 +1373,10 @@ const fixtures = <String, String>{
         "write": true
       }
     },
+    "className": "_User",
     "createdAt": "2000-01-01T00:00:00.000Z",
     "email": "carol@example.test",
+    "emailVerified": false,
     "objectId": "obj0000007",
     "sessionToken": "r:session0004",
     "updatedAt": "2000-01-01T00:00:00.000Z",
@@ -1393,11 +1403,6 @@ const fixtures = <String, String>{
       "obj0000009": {
         "read": true,
         "write": true
-      }
-    },
-    "authData": {
-      "anonymous": {
-        "id": "capture-anonymous"
       }
     },
     "authDataResponse": {},
@@ -1446,8 +1451,10 @@ const fixtures = <String, String>{
         "write": true
       }
     },
+    "className": "_User",
     "createdAt": "2000-01-01T00:00:00.000Z",
     "email": "carol@example.test",
+    "emailVerified": false,
     "objectId": "obj0000007",
     "sessionToken": "r:session0004",
     "updatedAt": "2000-01-01T00:00:00.000Z",
@@ -1470,7 +1477,8 @@ const fixtures = <String, String>{
   "response": {
     "createdAt": "2000-01-01T00:00:00.000Z",
     "objectId": "obj0000007",
-    "sessionToken": "r:session0003"
+    "sessionToken": "r:session0003",
+    "username": "carol"
   },
   "status": 201
 }

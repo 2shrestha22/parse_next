@@ -9,6 +9,7 @@ final class NoteFields extends Fields<Note> {
   StringField<Note> get text => const StringField('text');
   Field<Note, bool> get draft => const Field('draft');
   GeoField<Note> get place => const GeoField('place');
+  FileField<Note> get attachment => const FileField('attachment');
 }
 
 final class NoteOps {
@@ -18,6 +19,8 @@ final class NoteOps {
   NullableSetOps<bool> get draft => const NullableSetOps('draft');
   NullableSetOps<GeoPoint> get place =>
       NullableSetOps('place', (v) => v.toJson());
+  NullableSetOps<ParseFile> get attachment =>
+      NullableSetOps('attachment', (v) => v.toJson());
 }
 
 final class $NoteSchema implements ParseSchema<Note, NoteFields, NoteOps> {
@@ -31,6 +34,7 @@ final class $NoteSchema implements ParseSchema<Note, NoteFields, NoteOps> {
     text: json.require<String>('text'),
     draft: json.opt<bool>('draft'),
     place: json.opt<GeoPoint>('place'),
+    attachment: json.opt<ParseFile>('attachment'),
   );
 
   @override
@@ -38,6 +42,7 @@ final class $NoteSchema implements ParseSchema<Note, NoteFields, NoteOps> {
     'text': value.text,
     'draft': value.draft,
     'place': value.place?.toJson(),
+    'attachment': value.attachment?.toJson(),
   });
 
   @override

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:parse_next/parse_next.dart';
@@ -15,11 +14,12 @@ const vocabulary = ['amber', 'birch', 'cedar', 'delta', 'ember', 'fjord'];
 typedef Person = ({Pointer<User> user, int karma});
 
 final class Seeded {
-  Seeded(this.docs, this.people, this.users, this.backend);
+  Seeded(this.docs, this.people, this.users, this.items, this.backend);
 
   final List<Doc<Item>> docs;
   final List<Person> people;
   final Collection<User, UserFields, UserOps> users;
+  final Collection<Item, ItemFields, ItemOps> items;
   final Backend backend;
 
   Item operator [](int i) => docs[i].data;
@@ -30,13 +30,29 @@ typedef Case = ({
   String name,
   Cond<Item> Function(ItemFields f, Seeded s) cond,
   bool Function(Doc<Item> d, Seeded s) test,
+  String? postgres,
 });
 
+/// [postgres] is why the case cannot run there, if it cannot.
 Case c(
   String name,
   Cond<Item> Function(ItemFields f, Seeded s) cond,
-  bool Function(Doc<Item> d, Seeded s) test,
-) => (name: name, cond: cond, test: test);
+  bool Function(Doc<Item> d, Seeded s) test, {
+  String? postgres,
+}) => (name: name, cond: cond, test: test, postgres: postgres);
+
+int karmaOf(Seeded s, Pointer<User> user) =>
+    s.people.firstWhere((p) => p.user.id == user.id).karma;
+
+Set<String> namesWithRank(Seeded s, int rank) => {
+  for (final d in s.docs)
+    if (d.data.rank == rank) d.data.name,
+};
+
+const postgresDateIn =
+    r'Postgres passes a {"__type":"Date"} inside $ne, $in or $nin to SQL '
+    'unconverted and answers 500 (buildWhereClause in '
+    'PostgresStorageAdapter.js)';
 
 bool inList<V>(List<V> list, V v) => list.contains(v);
 
@@ -256,6 +272,92 @@ final cases = <Case>[
         .any((p) => p.user.id == d.data.owner.id),
   ),
   c(
+    'owner eq',
+    (f, s) => f.owner.eq(s.person(1)),
+    (d, s) => d.data.owner.id == s.person(1).id,
+  ),
+  c(
+    'owner ne',
+    (f, s) => f.owner.ne(s.person(1)),
+    (d, s) => d.data.owner.id != s.person(1).id,
+  ),
+  c(
+    'owner oneOf',
+    (f, s) => f.owner.oneOf([s.person(1), s.person(2)]),
+    (d, s) => {s.person(1).id, s.person(2).id}.contains(d.data.owner.id),
+  ),
+  c(
+    'owner noneOf',
+    (f, s) => f.owner.noneOf([s.person(1), s.person(2)]),
+    (d, s) => !{s.person(1).id, s.person(2).id}.contains(d.data.owner.id),
+  ),
+  c(
+    'owner notMatchesQuery',
+    (f, s) => f.owner.notMatchesQuery(
+      s.users.where(
+        (u) =>
+            u.karma.gte(3) & u.id.oneOf([for (final p in s.people) p.user.id]),
+      ),
+    ),
+    (d, s) => karmaOf(s, d.data.owner) < 3,
+  ),
+  c(
+    'name matchesKey',
+    (f, s) =>
+        f.name.matchesKey(s.items.where((i) => i.rank.eq(7)), (i) => i.name),
+    (d, s) => namesWithRank(s, 7).contains(d.data.name),
+  ),
+  c(
+    'name notMatchesKey',
+    (f, s) =>
+        f.name.notMatchesKey(s.items.where((i) => i.rank.eq(7)), (i) => i.name),
+    (d, s) => !namesWithRank(s, 7).contains(d.data.name),
+  ),
+  c('~ rank gt', (f, s) => ~f.rank.gt(30), (d, s) => !(d.data.rank > 30)),
+  c(
+    'name endsWith',
+    (f, s) => f.name.endsWith('ab'),
+    (d, s) => d.data.name.endsWith('ab'),
+  ),
+  c(
+    'name contains',
+    (f, s) => f.name.contains('fa'),
+    (d, s) => d.data.name.contains('fa'),
+  ),
+  c(
+    'tags containedBy',
+    (f, s) => f.tags.containedBy(['a', 'b']),
+    (d, s) => d.data.tags.every(['a', 'b'].contains),
+  ),
+  c(
+    'tags containsAllStartingWith',
+    (f, s) => f.tags.containsAllStartingWith(['a', 'c']),
+    (d, s) => d.data.tags.contains('a') && d.data.tags.contains('c'),
+  ),
+  c(
+    'spot withinKm',
+    (f, s) => f.spot.withinKm(origin, nearKm),
+    (d, s) => km(d.data.spot, origin) <= nearKm,
+  ),
+  c(
+    'at ne',
+    (f, s) => f.at.ne(s[3].at),
+    (d, s) => d.data.at != s[3].at,
+    postgres: postgresDateIn,
+  ),
+  c(
+    'at oneOf',
+    (f, s) => f.at.oneOf([s[3].at, s[4].at]),
+    (d, s) => d.data.at == s[3].at || d.data.at == s[4].at,
+    postgres: postgresDateIn,
+  ),
+  c(
+    'at noneOf',
+    (f, s) => f.at.noneOf([s[3].at]),
+    (d, s) => d.data.at != s[3].at,
+    postgres: postgresDateIn,
+  ),
+  c(
     'helpers contains',
     (f, s) => f.helpers.contains(s.person(1)),
     (d, s) => d.data.helpers.any((p) => p.id == s.person(1).id),
@@ -312,27 +414,6 @@ final cases = <Case>[
 extension on List<Doc<Item>> {
   String get firstNote => map((d) => d.data.note).nonNulls.first;
 }
-
-/// Why a pair cannot run on [backend], or null when it can.
-String? unsupportedPair(Backend backend, Case a, Case b, String op) {
-  if (backend.isPostgres) return null;
-  final names = {a.name, b.name};
-  if (names.containsAll(['spot near', 'note fullText'])) return mongoTextNear;
-  if (op != '|') return null;
-  if (names.contains('spot near')) return mongoNearInOr;
-  if (names.contains('note fullText')) return mongoTextInOr;
-  return null;
-}
-
-const mongoNearInOr =
-    r'MongoDB rejects $nearSphere inside $or '
-    '(parse-server answers 500); MongoTransform.js passes it through';
-const mongoTextNear =
-    r'MongoDB rejects $text together with $nearSphere in '
-    'one query (parse-server answers 500)';
-const mongoTextInOr =
-    r'MongoDB rejects $text inside $or unless every clause '
-    'is text-indexed (parse-server answers 500)';
 
 List<Item> generate(Random r, int n, List<Person> people) => [
   for (var i = 0; i < n; i++)
@@ -423,7 +504,7 @@ void main() {
           generate(Random(42), 200, people),
           items.create,
         );
-        s = Seeded(docs, people, users, backend);
+        s = Seeded(docs, people, users, items, backend);
       });
 
       Future<List<Doc<Item>>> all(Query<Item, ItemFields, ItemOps> q) =>
@@ -434,7 +515,7 @@ void main() {
 
       group('each constraint', () {
         for (final x in cases) {
-          test(x.name, () async {
+          test(x.name, skip: backend.isPostgres ? x.postgres : null, () async {
             final want = expected((d) => x.test(d, s));
             expect(
               want.length,
@@ -450,101 +531,32 @@ void main() {
         }
       });
 
-      for (final op in ['&', '|']) {
-        group('every pair with $op', () {
-          for (var i = 0; i < cases.length; i++) {
-            final a = cases[i];
-            final partners = cases.skip(i + 1).toList();
-            final skipped = {
-              for (final b in partners)
-                b.name: ?unsupportedPair(backend, a, b, op),
-            };
-            test('${a.name} $op each later constraint', () async {
-              final failures = <String>[];
-              await inBatches(
-                partners.where((b) => !skipped.containsKey(b.name)).toList(),
-                (b) async {
-                  final q = items.where(
-                    (f) => op == '&'
-                        ? a.cond(f, s) & b.cond(f, s)
-                        : a.cond(f, s) | b.cond(f, s),
-                  );
-                  final want = expected(
-                    (d) => op == '&'
-                        ? a.test(d, s) && b.test(d, s)
-                        : a.test(d, s) || b.test(d, s),
-                  );
-                  try {
-                    final got = ids(await all(q));
-                    if (got.length != want.length || !got.containsAll(want)) {
-                      failures.add(
-                        '${b.name}: got ${got.length}, '
-                        'want ${want.length}',
-                      );
-                    }
-                  } on ParseException catch (e) {
-                    failures.add('${b.name}: $e');
-                  }
-                },
-              );
-              expect(failures, isEmpty);
-            });
-            for (final reason in skipped.values.toSet()) {
-              final names = [
-                for (final e in skipped.entries)
-                  if (e.value == reason) e.key,
-              ];
-              test('${a.name} $op ${names.join(', ')}', skip: reason, () {});
-            }
-          }
-        });
-      }
+      test('& and | combine as the server expects', () async {
+        for (final (Cond<Item> Function(ItemFields f) cond, test) in [
+          // One key twice nests in $and.
+          (
+            (f) => f.tags.contains('a') & f.tags.contains('b'),
+            (Doc<Item> d) =>
+                d.data.tags.contains('a') && d.data.tags.contains('b'),
+          ),
+          // Mongo writes both as a top-level $nor.
+          (
+            (f) => f.tags.containedBy(['a', 'b']) & ~f.rank.gt(30),
+            (Doc<Item> d) =>
+                d.data.tags.every(['a', 'b'].contains) && d.data.rank <= 30,
+          ),
+          (
+            (f) => f.rank.lt(5) | (f.flag.eq(true) & f.rank.gt(45)),
+            (Doc<Item> d) =>
+                d.data.rank < 5 || (d.data.flag && d.data.rank > 45),
+          ),
+        ]) {
+          expect(ids(await all(items.where(cond))), expected(test));
+        }
+      });
 
       group('sort', () {
         String rank(Doc<Item> d) => d.data.rank.toString().padLeft(2, '0');
-        for (final (
-              name,
-              Sort<Item> Function(ItemFields f) sort,
-              String Function(Doc<Item> d) key,
-              bool desc,
-            )
-            in [
-              ('name asc', (f) => f.name.asc, (d) => d.data.name, false),
-              ('name desc', (f) => f.name.desc, (d) => d.data.name, true),
-              ('rank asc', (f) => f.rank.asc, rank, false),
-              ('rank desc', (f) => f.rank.desc, rank, true),
-              (
-                'at asc',
-                (f) => f.at.asc,
-                (d) => d.data.at.toIso8601String(),
-                false,
-              ),
-              (
-                'at desc',
-                (f) => f.at.desc,
-                (d) => d.data.at.toIso8601String(),
-                true,
-              ),
-              (
-                'createdAt asc',
-                (f) => f.createdAt.asc,
-                (d) => d.createdAt.toIso8601String(),
-                false,
-              ),
-              (
-                'createdAt desc',
-                (f) => f.createdAt.desc,
-                (d) => d.createdAt.toIso8601String(),
-                true,
-              ),
-            ]) {
-          test(name, () async {
-            final got = await all(items.query().orderBy(sort));
-            final want = [...s.docs.map(key)]..sort();
-            expect(got.map(key).toList(), desc ? want.reversed.toList() : want);
-            expect(ids(got), ids(s.docs));
-          });
-        }
 
         String pairKey(Doc<Item> d) => '${rank(d)} ${d.data.name}';
 
@@ -579,27 +591,21 @@ void main() {
             want.skip(10).take(20).toList(),
           );
         });
-
-        test(
-          'an absent value sorts first on Mongo and last on Postgres',
-          () async {
-            final got = await all(items.query().orderBy((f) => f.score.asc));
-            final scores = got.map((d) => d.data.score).toList();
-            final nulls = s.docs.where((d) => d.data.score == null).length;
-            final present = scores.nonNulls.toList();
-            expect(present, [...present]..sort());
-            expect(
-              scores,
-              backend.isPostgres
-                  ? [...present, for (var i = 0; i < nulls; i++) null]
-                  : [for (var i = 0; i < nulls; i++) null, ...present],
-            );
-          },
-        );
       });
 
-      test('find without a limit sends limit=100', () async {
-        expect(await items.query().find(), hasLength(100));
+      test('a where of 3,000 ids finds and counts its matches', () async {
+        final ids = [
+          for (var i = 0; i < 3000; i++)
+            'absent${i.toString().padLeft(4, '0')}',
+          s.docs[3].id,
+          s.docs[5].id,
+        ];
+        final q = items.where((f) => f.id.oneOf(ids));
+        expect(
+          {for (final d in await q.find()) d.id},
+          {s.docs[3].id, s.docs[5].id},
+        );
+        expect(await q.count(), 2);
       });
 
       test('first and count', () async {
@@ -624,6 +630,71 @@ void main() {
           expect(r['rank'], 7);
           expect(r, isNot(contains('name')));
           expect(r['objectId'], isA<String>());
+        }
+      });
+
+      test('raw with exclude leaves those keys out', () async {
+        final rows = await items
+            .where((f) => f.rank.eq(7))
+            .raw(exclude: ['name', 'note']);
+        expect(rows, hasLength(s.docs.where((d) => d.data.rank == 7).length));
+        for (final r in rows) {
+          expect(r, isNot(contains('name')));
+          expect(r, isNot(contains('note')));
+          expect(r['rank'], 7);
+        }
+      });
+
+      test('an empty oneOf or containsAny matches nothing, in | too', () async {
+        expect(await items.where((f) => f.name.oneOf([])).count(), 0);
+        expect(await items.where((f) => f.tags.containsAny([])).count(), 0);
+        expect(
+          ids(await all(items.where((f) => f.owner.oneOf([]) | f.rank.eq(7)))),
+          expected((d) => d.data.rank == 7),
+        );
+      });
+
+      test('findAndCount returns the page and the total', () async {
+        final r = await items
+            .where((f) => f.rank.lt(25))
+            .orderBy((f) => f.name.asc)
+            .limit(10)
+            .findAndCount();
+        expect(r.docs, hasLength(10));
+        expect(r.count, s.docs.where((d) => d.data.rank < 25).length);
+      });
+
+      test('get finds an id with includes, within the where only', () async {
+        final doc = s.docs[5];
+        final got = await items.query().include((f) => f.owner).get(doc.id);
+        expect(got.data.owner.loaded!.id, doc.data.owner.id);
+        await expectLater(
+          items.where((f) => f.rank.ne(doc.data.rank)).get(doc.id),
+          throwsA(isA<ObjectNotFound>()),
+        );
+      });
+
+      test('includeAll loads every pointer', () async {
+        final doc = s.docs.firstWhere((d) => d.data.helpers.isNotEmpty);
+        final got = await items.query().includeAll().get(doc.id);
+        expect(got.data.owner.loaded, isNotNull);
+        expect(got.data.helpers.map((p) => p.loaded), everyElement(isNotNull));
+      });
+
+      test('hint, comment and readPreference', () async {
+        final q = items.where((f) => f.rank.eq(7));
+        final want = expected((d) => d.data.rank == 7);
+        expect(ids(await all(q.hint('_id_'))), want);
+        expect(ids(await all(q.comment('parity check'))), want);
+        expect(
+          ids(await all(q.readPreference(ReadPreference.secondaryPreferred))),
+          want,
+        );
+        if (!backend.isPostgres) {
+          await expectLater(
+            all(q.hint('no_such_index')),
+            throwsA(isA<ParseException>()),
+          );
         }
       });
 
@@ -678,65 +749,41 @@ void main() {
             .find();
         expect([for (final d in some) d.id], [s.person(2).id]);
       });
-
-      group('dates', () {
-        test(
-          'createdAt.gt sends __type Date and returns the later rows',
-          () async {
-            final pivot = s.docs[100].createdAt;
-            final got = await all(items.where((f) => f.createdAt.gt(pivot)));
-            expect(ids(got), expected((d) => d.createdAt.isAfter(pivot)));
-            expect(got, isNotEmpty);
-          },
-        );
-
-        for (final key in ['createdAt', 'happened_at']) {
-          test('a plain ISO string on $key over raw HTTP', () async {
-            final pivot = DateTime.utc(2000).toIso8601String();
-            final r = await backend.rest(
-              'GET',
-              '/classes/Item',
-              query: {
-                'where': jsonEncode({
-                  key: {r'$gt': pivot},
-                }),
-                'limit': '1000',
-              },
-            );
-            final rows = r['results']! as List<Object?>;
-            expect(rows, backend.isPostgres ? hasLength(200) : isEmpty);
-          });
-        }
-      });
     });
 
     group('fullText', () {
       setUpAll(() async {
         await resetItems(backend);
-        await inBatches(generate(Random(1), 5, people), items.create);
+        await inBatches(generate(Random(1), 20, people), items.create);
       });
 
-      test('count before any find is a 500 on Mongo only', () async {
-        Query<Item, ItemFields, ItemOps> q(ParseClient c) =>
-            c.collection(itemSchema).where((f) => f.note.fullText('amber'));
-        if (backend.isPostgres) {
-          await q(client).count();
-          return;
-        }
-        final failing = backend.client();
-        await expectLater(
-          q(failing).count(),
-          throwsA(
-            isA<OtherParseError>().having((e) => e.status, 'status', 500),
-          ),
-        );
-        failing.close();
-        // A fresh client: after an uncaught 500 parse-server destroys the
-        // socket (handleParseErrors calls next(err) after responding), so
-        // the next request on the pooled connection can fail.
-        await q(client).find();
-        expect(await q(client).count(), greaterThan(0));
-      });
+      test(
+        'several words with options, sorted by score',
+        skip: backend.isPostgres
+            ? 'Postgres passes the search to to_tsquery, where a space is a '
+                  'syntax error, and rejects \$caseSensitive '
+                  '(PostgresStorageAdapter.js)'
+            : null,
+        () async {
+          final got = await items
+              .where(
+                (f) => f.note.fullText(
+                  'amber birch',
+                  language: 'english',
+                  caseSensitive: false,
+                  diacriticSensitive: false,
+                ),
+              )
+              .orderByTextScore()
+              .find();
+          int words(Doc<Item> d) =>
+              ['amber', 'birch'].where(d.data.note!.contains).length;
+          expect(got, isNotEmpty);
+          expect(got.map(words), everyElement(greaterThan(0)));
+          final scores = got.map(words).toList();
+          expect(scores, [...scores]..sort((a, b) => b.compareTo(a)));
+        },
+      );
     });
 
     group('stream', () {

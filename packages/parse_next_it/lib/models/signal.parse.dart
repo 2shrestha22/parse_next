@@ -12,8 +12,9 @@ final class SignalFields extends Fields<Signal> {
   ListField<Signal, String> get tags => const ListField('tags');
   DateField<Signal> get at => const DateField('at');
   GeoField<Signal> get place => const GeoField('place');
-  PointerListField<Signal, Signal> get links =>
+  PointerListField<Signal, Signal, SignalFields> get links =>
       PointerListField('links', const $SignalSchema());
+  FileField<Signal> get file => const FileField('file');
 }
 
 final class SignalOps {
@@ -28,6 +29,8 @@ final class SignalOps {
       NullableSetOps('place', (v) => v.toJson());
   NullableListOps<Pointer<Signal>> get links =>
       NullableListOps('links', (v) => v.encode(const $SignalSchema()));
+  NullableSetOps<ParseFile> get file =>
+      NullableSetOps('file', (v) => v.toJson());
 }
 
 final class $SignalSchema
@@ -46,6 +49,7 @@ final class $SignalSchema
     at: json.opt<DateTime>('at'),
     place: json.opt<GeoPoint>('place'),
     links: json.optPointerList('links', const $SignalSchema()),
+    file: json.opt<ParseFile>('file'),
   );
 
   @override
@@ -59,6 +63,7 @@ final class $SignalSchema
     'links': value.links == null
         ? null
         : [for (final p in value.links!) p.encode(const $SignalSchema())],
+    'file': value.file?.toJson(),
   });
 
   @override

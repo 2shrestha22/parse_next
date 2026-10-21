@@ -36,7 +36,8 @@
       },
       "attachment": {
         "__type": "File",
-        "name": "file0001_hello.txt"
+        "name": "file0001_hello.txt",
+        "url": "http://parse.test/parse/files/parse-next-it/file0001_hello.txt"
       },
       "author": {
         "__type": "Pointer",

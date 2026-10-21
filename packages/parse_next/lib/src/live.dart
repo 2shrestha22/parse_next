@@ -49,6 +49,11 @@ final class Subscribed<T> extends LiveEvent<T> {
   const Subscribed();
 }
 
+/// The connection was lost; changes are missed until the next [Subscribed].
+final class Disconnected<T> extends LiveEvent<T> {
+  const Disconnected();
+}
+
 const _maxBackoff = Duration(seconds: 30);
 
 final class _LiveSocket {
@@ -65,7 +70,7 @@ final class _LiveSocket {
 
   Stream<LiveEvent<T>> subscribe<T>(
     ParseSchema<T, Object?, Object?> schema,
-    Map<String, Object?> where,
+    Map<String, Object?> query,
   ) {
     late final StreamController<LiveEvent<T>> controller;
     _LiveSub<T>? sub;
@@ -88,7 +93,7 @@ final class _LiveSocket {
         }
         final s = sub = _LiveSub(++_nextId, schema, controller, {
           'className': schema.className,
-          'where': where,
+          ...query,
         }, token);
         _subs[s.id] = s;
         if (_connected) {
@@ -152,13 +157,20 @@ final class _LiveSocket {
       'op': 'connect',
       'applicationId': _client.appId,
       'clientKey': ?_client.clientKey,
+      'installationId': ?_client.installationId,
     });
   }
 
   void _lost() {
+    final wasConnected = _connected;
     _channel = null;
     _connected = false;
     if (_subs.isEmpty) return;
+    if (wasConnected) {
+      for (final s in _subs.values) {
+        s.disconnected();
+      }
+    }
     _retry = Timer(_backoff, () {
       _retry = null;
       _open();
@@ -240,6 +252,8 @@ final class _LiveSub<T> {
 
   void subscribed() => controller.add(Subscribed<T>());
 
+  void disconnected() => controller.add(Disconnected<T>());
+
   void event(String op, Object? object) {
     final Doc<T> doc;
     try {
@@ -273,7 +287,7 @@ final class _LiveSub<T> {
 Map<String, Object?> _liveWhere(Map<String, Object?> where) => {
   for (final MapEntry(:key, :value) in where.entries)
     key: switch (key) {
-      r'$or' || r'$and' => [
+      r'$or' || r'$and' || r'$nor' => [
         for (final w in value! as List<Object?>)
           _liveWhere(w! as Map<String, Object?>),
       ],
@@ -287,8 +301,8 @@ Map<String, Object?> _liveWhere(Map<String, Object?> where) => {
 
 /// Without `$exists` first, an absent field passes every range check
 /// (`undefined < x` and `undefined >= x` are both false), a `$regex` is
-/// tested against the string "undefined", and `$geoWithin` throws, which
-/// drops the event.
+/// tested against the string "undefined", and `$geoWithin` and
+/// `$containedBy` throw, which drops the event.
 const _needsExists = {
   r'$lt',
   r'$lte',
@@ -296,6 +310,7 @@ const _needsExists = {
   r'$gte',
   r'$regex',
   r'$geoWithin',
+  r'$containedBy',
 };
 
 Object? _liveConstraint(Object? value) {
@@ -306,10 +321,27 @@ Object? _liveConstraint(Object? value) {
   if (value.containsKey(r'$inQuery')) {
     _unsupported('PointerField.matchesQuery never matches');
   }
+  if (value.containsKey(r'$notInQuery')) {
+    _unsupported('PointerField.notMatchesQuery never matches');
+  }
+  if (value.containsKey(r'$select') || value.containsKey(r'$dontSelect')) {
+    _unsupported('matchesKey and notMatchesKey never match');
+  }
   if (value[r'$all'] case final List<Object?> all) {
     if (all.isEmpty) _unsupported('an empty containsAll matches every list');
+    // Compared by identity (`indexOf` in QueryTools.js).
     if (all.any((v) => v is Map)) {
-      _unsupported('contains on a pointer list never matches');
+      _unsupported(
+        'contains on a pointer list and containsAllStartingWith never match',
+      );
+    }
+  }
+  for (final op in [r'$in', r'$nin']) {
+    // Compared by identity with the object's Date (`contains` in
+    // QueryTools.js).
+    if (value[op] case final List<Object?> list
+        when list.any((v) => v is Map && v['__type'] == 'Date')) {
+      _unsupported('oneOf and noneOf on a date never match');
     }
   }
   return value.keys.any(_needsExists.contains)

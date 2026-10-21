@@ -21,13 +21,19 @@ final class Backend {
 
   ParseClient client({
     String appId = appId,
+    String? installationId,
     SessionStore? sessions,
     http.Client? httpClient,
+    int attempts = 1,
+    bool idempotency = false,
   }) => ParseClient(
     server: Uri.parse(url),
     appId: appId,
+    installationId: installationId,
     sessions: sessions,
     httpClient: httpClient,
+    attempts: attempts,
+    idempotency: idempotency,
   );
 
   Future<Map<String, Object?>> rest(

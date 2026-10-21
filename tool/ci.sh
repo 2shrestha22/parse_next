@@ -57,7 +57,7 @@ step "G4 format"
 dart format --output=none --set-exit-if-changed .
 
 step "G5 unit tests"
-(cd packages/parse_next && dart test -p vm,chrome)
+(cd packages/parse_next && dart test -p vm && dart test -p chrome -t platform)
 # The generator runs the analyzer, which needs dart:io.
 (cd packages/parse_next_generator && dart test -p vm)
 

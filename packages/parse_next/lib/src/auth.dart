@@ -168,6 +168,88 @@ final class Auth<U> {
     );
   }
 
+  /// Sends [email] a new verification mail. Needs `verifyUserEmails` and an
+  /// email adapter on the server; fails with 205 for an unknown or already
+  /// verified address only when
+  /// `emailVerifySuccessOnInvalidEmail` is false.
+  Future<void> requestEmailVerification(String email) async {
+    await request(
+      _client,
+      'POST',
+      '/verificationEmailRequest',
+      body: Json({'email': email}),
+      stored: false,
+    );
+  }
+
+  /// The user [username] if [password] is theirs, without logging in or
+  /// changing the session. Throws [InvalidCredentials] otherwise.
+  Future<Doc<U>> verifyPassword(String username, String password) async =>
+      Doc.decode(
+        await request(
+          _client,
+          'POST',
+          '/verifyPassword',
+          body: Json({
+            '_method': 'GET',
+            'username': username,
+            'password': password,
+          }),
+          stored: false,
+        ),
+        _schema,
+      );
+
+  /// Links [authData] for [provider] to the logged-in user, so that
+  /// [logInWith] with it logs in as them. The server validates [authData]
+  /// with that provider's auth adapter, and fails with 208 when another user
+  /// already has it.
+  Future<void> linkWith(String provider, Map<String, Object?> authData) =>
+      _setAuthData(provider, authData);
+
+  /// Removes [provider] from the logged-in user.
+  Future<void> unlink(String provider) => _setAuthData(provider, null);
+
+  Future<void> _setAuthData(String provider, Object? authData) async {
+    await request(
+      _client,
+      'PUT',
+      '/users/${Uri.encodeComponent(await _userId())}',
+      body: Json({
+        'authData': {provider: authData},
+      }),
+    );
+  }
+
+  /// The server ends every session of the user, this one too, and returns a
+  /// new one, which this client keeps. Clients logged in elsewhere get
+  /// [InvalidSession] on their next call.
+  Future<void> updatePassword(String password) async {
+    final response = await request(
+      _client,
+      'PUT',
+      '/users/${Uri.encodeComponent(await _userId())}',
+      body: Json({'password': password}),
+    );
+    final session = await _client._session();
+    if ((session, response['sessionToken']) case (
+      final _Session s,
+      final String token,
+    )) {
+      await _client._setSession(_Session(token, s.user), emit: false);
+    }
+  }
+
+  /// The stored session as the server has it.
+  Future<SessionInfo> session() async =>
+      SessionInfo._(await request(_client, 'GET', '/sessions/me'));
+
+  Future<String> _userId() async {
+    final session = await _client._session();
+    if (session == null) throw StateError('No user is logged in.');
+    return session.user.require<String>('objectId');
+  }
+
   /// Fetches the stored session's user and keeps it for [current].
   Future<Doc<U>> me() async {
     final session = _Session.from(await request(_client, 'GET', '/users/me'));
@@ -188,4 +270,23 @@ final class Auth<U> {
 
   Doc<U>? _doc(_Session? session) =>
       session == null ? null : Doc.decode(session.user, _schema);
+}
+
+/// A `_Session` object.
+final class SessionInfo {
+  SessionInfo._(Json json)
+    : id = json.require<String>('objectId'),
+      expiresAt = json.opt<DateTime>('expiresAt'),
+      installationId = json.opt<String>('installationId'),
+      createdWith = json.optMap('createdWith') ?? const {};
+
+  final String id;
+  final DateTime? expiresAt;
+
+  /// The `installationId` the client sent when it logged in.
+  final String? installationId;
+
+  /// How the session started, such as
+  /// `{"action": "login", "authProvider": "password"}`.
+  final Map<String, Object?> createdWith;
 }

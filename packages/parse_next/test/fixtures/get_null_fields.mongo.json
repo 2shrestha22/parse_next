@@ -6,6 +6,7 @@
   "response": {
     "attachment": null,
     "author": null,
+    "className": "Post",
     "coauthors": null,
     "count": null,
     "createdAt": "2000-01-01T00:00:00.000Z",

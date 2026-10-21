@@ -14,13 +14,13 @@ final class ItemFields extends Fields<Item> {
   Field<Item, Kind> get kind => Field('kind', (v) => v.name);
   Field<Item, bool> get flag => const Field('flag');
   ListField<Item, String> get tags => const ListField('tags');
-  PointerField<Item, User> get owner =>
+  PointerField<Item, User, UserFields> get owner =>
       const PointerField('owner', $UserSchema());
-  PointerListField<Item, User> get helpers =>
+  PointerListField<Item, User, UserFields> get helpers =>
       PointerListField('helpers', const $UserSchema());
   GeoField<Item> get spot => const GeoField('spot');
   RelationField<Item, User> get fans =>
-      const RelationField('fans', $ItemSchema());
+      const RelationField('fans', $ItemSchema(), $UserSchema());
 }
 
 final class ItemOps {

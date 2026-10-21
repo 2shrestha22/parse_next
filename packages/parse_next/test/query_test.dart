@@ -46,7 +46,21 @@ final class Server {
   late final authors = client.collection(authorSchema);
 
   http.Request get only => requests.single;
-  Map<String, String> get params => only.url.queryParameters;
+  Map<String, Object?> get params => query(only);
+}
+
+Future<Object?> whereOf(Cond<Post> Function(PostFields f) build) async {
+  final s = Server();
+  await s.posts.where(build).find();
+  return s.params['where'];
+}
+
+/// The query of a find or count, sent as a POST read as a GET.
+Map<String, Object?> query(http.Request r) {
+  expect(r.method, 'POST');
+  final body = jsonDecode(r.body) as Map<String, Object?>;
+  expect(body.remove('_method'), 'GET');
+  return body;
 }
 
 void main() {
@@ -167,13 +181,232 @@ void main() {
       ),
       (
         'fullText',
-        (f) => f.title.fullText(' word '),
+        (f) => f.title.fullText('two words'),
         {
           'title': {
             r'$text': {
-              r'$search': {r'$term': 'word'},
+              r'$search': {r'$term': 'two words'},
             },
           },
+        },
+      ),
+      (
+        'fullText with options',
+        (f) => f.title.fullText(
+          'w',
+          language: 'fr',
+          caseSensitive: true,
+          diacriticSensitive: false,
+        ),
+        {
+          'title': {
+            r'$text': {
+              r'$search': {
+                r'$term': 'w',
+                r'$language': 'fr',
+                r'$caseSensitive': true,
+                r'$diacriticSensitive': false,
+              },
+            },
+          },
+        },
+      ),
+      (
+        r'startsWith quotes \E as the JS SDK does',
+        (f) => f.title.startsWith(r'a\Eb'),
+        {
+          'title': {r'$regex': r'^\Qa\E\\E\Qb\E'},
+        },
+      ),
+      (
+        'endsWith',
+        (f) => f.title.endsWith('.png'),
+        {
+          'title': {r'$regex': r'\Q.png\E$'},
+        },
+      ),
+      (
+        'contains on a string',
+        (f) => f.title.contains('a.b'),
+        {
+          'title': {r'$regex': r'\Qa.b\E'},
+        },
+      ),
+      (
+        'oneOf with no values matches nothing',
+        (f) => f.title.oneOf([]),
+        {
+          'objectId': {r'$in': <Object?>[]},
+        },
+      ),
+      (
+        'containsAny with no values matches nothing',
+        (f) => f.tags.containsAny([]),
+        {
+          'objectId': {r'$in': <Object?>[]},
+        },
+      ),
+      (
+        'containedBy',
+        (f) => f.tags.containedBy(['a', 'b']),
+        {
+          'tags': {
+            r'$containedBy': ['a', 'b'],
+          },
+        },
+      ),
+      (
+        'containsAllStartingWith',
+        (f) => f.tags.containsAllStartingWith(['a', 'b']),
+        {
+          'tags': {
+            r'$all': [
+              {r'$regex': r'^\Qa\E'},
+              {r'$regex': r'^\Qb\E'},
+            ],
+          },
+        },
+      ),
+      (
+        'a pointer eq',
+        (f) => f.author.eq(const Pointer('a1')),
+        {'author': authorPointer},
+      ),
+      (
+        'a pointer ne',
+        (f) => f.author.ne(const Pointer('a1')),
+        {
+          'author': {r'$ne': authorPointer},
+        },
+      ),
+      (
+        'a pointer oneOf',
+        (f) => f.author.oneOf(const [Pointer('a1')]),
+        {
+          'author': {
+            r'$in': [authorPointer],
+          },
+        },
+      ),
+      (
+        'a pointer noneOf',
+        (f) => f.author.noneOf(const [Pointer('a1')]),
+        {
+          'author': {
+            r'$nin': [authorPointer],
+          },
+        },
+      ),
+      (
+        'nor',
+        (f) => ~f.count.gt(1),
+        {
+          r'$nor': [
+            {
+              'count': {r'$gt': 1},
+            },
+          ],
+        },
+      ),
+      (
+        'date ne and oneOf',
+        (f) => f.publishedAt.ne(date) | f.publishedAt.oneOf([date]),
+        {
+          r'$or': [
+            {
+              'publishedAt': {r'$ne': dateJson},
+            },
+            {
+              'publishedAt': {
+                r'$in': [dateJson],
+              },
+            },
+          ],
+        },
+      ),
+      (
+        'withinKm',
+        (f) => f.location.withinKm(GeoPoint(10, 20), 6371),
+        {
+          'location': {
+            r'$geoWithin': {
+              r'$centerSphere': [
+                [20.0, 10.0],
+                1.0,
+              ],
+            },
+          },
+        },
+      ),
+      (
+        'a polygon containsPoint',
+        (f) => f.area.containsPoint(GeoPoint(1, 2)),
+        {
+          'area': {
+            r'$geoIntersects': {
+              r'$point': {
+                '__type': 'GeoPoint',
+                'latitude': 1.0,
+                'longitude': 2.0,
+              },
+            },
+          },
+        },
+      ),
+      (
+        'a file eq',
+        (f) => f.attachment.eq(const ParseFile(name: 'n', url: 'u')),
+        {
+          'attachment': {'__type': 'File', 'name': 'n', 'url': 'u'},
+        },
+      ),
+      (
+        'containedBy and nor nest in \$and, as Mongo writes both as \$nor',
+        (f) => f.tags.containedBy(['a']) & ~f.count.gt(1),
+        {
+          r'$and': [
+            {
+              'tags': {
+                r'$containedBy': ['a'],
+              },
+            },
+            {
+              r'$nor': [
+                {
+                  'count': {r'$gt': 1},
+                },
+              ],
+            },
+          ],
+        },
+      ),
+      (
+        'two fullText nest in \$and, as Mongo writes both as \$text',
+        (f) => f.title.fullText('a') & f.slug.fullText('b'),
+        {
+          r'$and': [
+            {
+              'title': {
+                r'$text': {
+                  r'$search': {r'$term': 'a'},
+                },
+              },
+            },
+            {
+              'slug': {
+                r'$text': {
+                  r'$search': {r'$term': 'b'},
+                },
+              },
+            },
+          ],
+        },
+      ),
+      (
+        'a value inside a map',
+        (f) => f.meta.at('a.b').gte(date),
+        {
+          'meta.a.b': {r'$gte': dateJson},
         },
       ),
       (
@@ -364,9 +597,8 @@ void main() {
       test(name, () async {
         final s = Server();
         await s.posts.where(build).find();
-        expect(s.only.method, 'GET');
         expect(s.only.url.path, '/parse/classes/Post');
-        expect(s.params, {'where': jsonEncode(json), 'limit': '100'});
+        expect(s.params, {'where': json, 'limit': 100});
       });
     }
   });
@@ -375,19 +607,12 @@ void main() {
     final s = Server();
     await s.authors.where((_) => const PostFields().followers.of('p 1')).find();
     expect(s.only.url.path, '/parse/classes/Author');
-    expect(
-      s.params['where'],
-      jsonEncode({
-        r'$relatedTo': {
-          'object': {
-            '__type': 'Pointer',
-            'className': 'Post',
-            'objectId': 'p 1',
-          },
-          'key': 'followers',
-        },
-      }),
-    );
+    expect(s.params['where'], ({
+      r'$relatedTo': {
+        'object': {'__type': 'Pointer', 'className': 'Post', 'objectId': 'p 1'},
+        'key': 'followers',
+      },
+    }));
   });
 
   test('repeated where combines with &', () async {
@@ -397,20 +622,17 @@ void main() {
         .where((f) => f.title.eq('a'))
         .where((f) => f.count.lt(9))
         .find();
-    expect(
-      s.params['where'],
-      jsonEncode({
-        r'$and': [
-          {
-            'count': {r'$gt': 1},
-            'title': 'a',
-          },
-          {
-            'count': {r'$lt': 9},
-          },
-        ],
-      }),
-    );
+    expect(s.params['where'], ({
+      r'$and': [
+        {
+          'count': {r'$gt': 1},
+          'title': 'a',
+        },
+        {
+          'count': {r'$lt': 9},
+        },
+      ],
+    }));
   });
 
   test('include, orderBy, limit and skip', () async {
@@ -428,8 +650,8 @@ void main() {
     expect(s.params, {
       'include': 'author,coauthors',
       'order': '-count,title,-createdAt',
-      'limit': '5',
-      'skip': '10',
+      'limit': 5,
+      'skip': 10,
     });
   });
 
@@ -439,10 +661,10 @@ void main() {
     base.limit(3).include((f) => f.author).orderBy((f) => f.count.asc);
     await base.find();
     expect(s.params, {
-      'where': jsonEncode({
+      'where': ({
         'count': {r'$gt': 1},
       }),
-      'limit': '100',
+      'limit': 100,
     });
   });
 
@@ -477,7 +699,7 @@ void main() {
       ]),
     );
     final got = await s.posts.query().tryFind();
-    expect(s.params, {'limit': '100'});
+    expect(s.params, {'limit': 100});
     expect(got, [
       isA<Ok<Doc<Post>>>().having((r) => r.value.id, 'id', 'p1'),
       isA<Err<Doc<Post>>>().having(
@@ -494,7 +716,7 @@ void main() {
   test('first sends limit 1 and returns null for no rows', () async {
     final s = Server();
     expect(await s.posts.query().skip(2).first(), isNull);
-    expect(s.params, {'limit': '1', 'skip': '2'});
+    expect(s.params, {'limit': 1, 'skip': 2});
 
     final t = Server((_) => results([row('p1')]));
     expect((await t.posts.query().first())!.id, 'p1');
@@ -513,11 +735,11 @@ void main() {
       7,
     );
     expect(s.params, {
-      'where': jsonEncode({
+      'where': ({
         'count': {r'$gt': 1},
       }),
-      'count': '1',
-      'limit': '0',
+      'count': 1,
+      'limit': 0,
     });
   });
 
@@ -534,10 +756,10 @@ void main() {
       {'objectId': 'p1', 'title': 3},
     ]);
     expect(s.params, {
-      'where': jsonEncode({
+      'where': ({
         'count': {r'$gt': 1},
       }),
-      'limit': '100',
+      'limit': 100,
       'keys': 'title,count',
     });
   });
@@ -560,31 +782,31 @@ void main() {
       expect(s.requests, hasLength(3));
       final count = {r'$gt': 1};
       expect(
-        [for (final r in s.requests) r.url.queryParameters],
+        [for (final r in s.requests) query(r)],
         [
           {
-            'where': jsonEncode({'count': count}),
+            'where': ({'count': count}),
             'include': 'author',
             'order': 'objectId',
-            'limit': '100',
+            'limit': 100,
           },
           {
-            'where': jsonEncode({
+            'where': ({
               'count': count,
               'objectId': {r'$gt': 'id099'},
             }),
             'include': 'author',
             'order': 'objectId',
-            'limit': '100',
+            'limit': 100,
           },
           {
-            'where': jsonEncode({
+            'where': ({
               'count': count,
               'objectId': {r'$gt': 'id199'},
             }),
             'include': 'author',
             'order': 'objectId',
-            'limit': '100',
+            'limit': 100,
           },
         ],
       );
@@ -598,19 +820,16 @@ void main() {
       );
       await s.posts.where((f) => f.id.gt('a')).stream().drain<void>();
       expect(s.requests, hasLength(2));
-      expect(
-        s.requests.last.url.queryParameters['where'],
-        jsonEncode({
-          r'$and': [
-            {
-              'objectId': {r'$gt': 'a'},
-            },
-            {
-              'objectId': {r'$gt': 'id99'},
-            },
-          ],
-        }),
-      );
+      expect(query(s.requests.last)['where'], ({
+        r'$and': [
+          {
+            'objectId': {r'$gt': 'a'},
+          },
+          {
+            'objectId': {r'$gt': 'id99'},
+          },
+        ],
+      }));
     });
 
     test('sends nothing until listened to', () async {
@@ -641,33 +860,114 @@ void main() {
     }
   });
 
+  group('subqueries', () {
+    final authors = Server().authors;
+    final named = authors.where((f) => f.name.eq('Ann'));
+    final sub = {
+      'where': {'name': 'Ann'},
+      'className': 'Author',
+    };
+
+    test('notMatchesQuery', () async {
+      expect(await whereOf((f) => f.author.notMatchesQuery(named)), {
+        'author': {r'$notInQuery': sub},
+      });
+    });
+
+    test('matchesKey and notMatchesKey', () async {
+      expect(await whereOf((f) => f.title.matchesKey(named, (a) => a.name)), {
+        'title': {
+          r'$select': {'query': sub, 'key': 'name'},
+        },
+      });
+      expect(
+        await whereOf((f) => f.title.notMatchesKey(named, (a) => a.name)),
+        {
+          'title': {
+            r'$dontSelect': {'query': sub, 'key': 'name'},
+          },
+        },
+      );
+    });
+
+    test('a subquery with more than a where', () {
+      expect(
+        () => const PostFields().title.matchesKey(
+          authors.query().limit(1),
+          (a) => a.name,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  test('RelationField.has queries the owner class', () async {
+    final s = Server();
+    await s.posts.where((f) => f.followers.has(const Pointer('a1'))).find();
+    expect(s.params['where'], {'followers': authorPointer});
+  });
+
+  test('options are sent with the query', () async {
+    final s = Server();
+    await s.posts
+        .query()
+        .includeAll()
+        .include((f) => f.author.then((a) => a.mentor))
+        .include((f) => f.coauthors.then((a) => a.mentor))
+        .orderByTextScore()
+        .hint('_id_')
+        .comment('why')
+        .readPreference(ReadPreference.secondaryPreferred)
+        .find();
+    expect(s.params, {
+      'include': 'author.mentor,coauthors.mentor',
+      'order': r'$score',
+      'limit': 100,
+      'includeAll': true,
+      'hint': '_id_',
+      'comment': 'why',
+      'readPreference': 'SECONDARY_PREFERRED',
+    });
+  });
+
+  test('findAndCount sends count with the find', () async {
+    final s = Server(
+      (_) => {
+        ...results([row('p1')]),
+        'count': 9,
+      },
+    );
+    final got = await s.posts.where((f) => f.count.gt(1)).findAndCount();
+    expect(s.params, {
+      'where': {
+        'count': {r'$gt': 1},
+      },
+      'limit': 100,
+      'count': 1,
+    });
+    expect([for (final d in got.docs) d.id], ['p1']);
+    expect(got.count, 9);
+  });
+
+  test('get finds the id with the includes, or is ObjectNotFound', () async {
+    final s = Server((call) => results(call == 0 ? [row('p1')] : []));
+    final q = s.posts.query().include((f) => f.author);
+    expect((await q.get('p1')).id, 'p1');
+    expect(query(s.requests[0]), {
+      'where': {'objectId': 'p1'},
+      'include': 'author',
+      'limit': 1,
+    });
+    await expectLater(q.get('p2'), throwsA(isA<ObjectNotFound>()));
+  });
+
+  test('raw sends exclude as excludeKeys', () async {
+    final s = Server();
+    await s.posts.query().raw(exclude: ['meta', 'data']);
+    expect(s.params, {'limit': 100, 'excludeKeys': 'meta,data'});
+  });
+
   group('rejects before any request', () {
-    test('oneOf with no values', () {
-      expect(() => const PostFields().title.oneOf([]), throwsArgumentError);
-    });
-
-    test('containsAny with no values', () {
-      expect(
-        () => const PostFields().tags.containsAny([]),
-        throwsArgumentError,
-      );
-    });
-
-    test(r'startsWith with \E', () {
-      expect(
-        () => const PostFields().title.startsWith(r'a\Eb'),
-        throwsArgumentError,
-      );
-    });
-
-    test('fullText with more than one word', () {
-      expect(
-        () => const PostFields().title.fullText('a b'),
-        throwsArgumentError,
-      );
-      expect(() => const PostFields().title.fullText(' '), throwsArgumentError);
-    });
-
     test('matchesQuery with more than a where', () {
       final s = Server();
       for (final q in [

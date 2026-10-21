@@ -23,23 +23,23 @@ final class PostFields extends Fields<Post> {
       Field('previousStatus', (v) => v.name);
   ListField<Post, String> get tags => const ListField('tags');
   ListField<Post, int> get ranks => const ListField('ranks');
-  ExistsField<Post> get meta => const ExistsField('meta');
-  ExistsField<Post> get extra => const ExistsField('extra');
-  PointerField<Post, User> get author =>
+  MapField<Post> get meta => const MapField('meta');
+  MapField<Post> get extra => const MapField('extra');
+  PointerField<Post, User, UserFields> get author =>
       const PointerField('author', $UserSchema());
-  PointerField<Post, User> get editor =>
+  PointerField<Post, User, UserFields> get editor =>
       const PointerField('editor', $UserSchema());
-  PointerListField<Post, User> get coauthors =>
+  PointerListField<Post, User, UserFields> get coauthors =>
       PointerListField('coauthors', const $UserSchema());
-  PointerListField<Post, User> get reviewers =>
+  PointerListField<Post, User, UserFields> get reviewers =>
       PointerListField('reviewers', const $UserSchema());
   RelationField<Post, User> get followers =>
-      const RelationField('followers', $PostSchema());
-  ExistsField<Post> get cover => const ExistsField('cover');
-  ExistsField<Post> get attachment => const ExistsField('attachment');
+      const RelationField('followers', $PostSchema(), $UserSchema());
+  FileField<Post> get cover => const FileField('cover');
+  FileField<Post> get attachment => const FileField('attachment');
   GeoField<Post> get location => const GeoField('location');
-  ExistsField<Post> get area => const ExistsField('area');
-  ExistsField<Post> get zone => const ExistsField('zone');
+  PolygonField<Post> get area => const PolygonField('area');
+  PolygonField<Post> get zone => const PolygonField('zone');
   ExistsField<Post> get thumbnail => const ExistsField('thumb');
   ExistsField<Post> get data => const ExistsField('data');
 }
@@ -65,9 +65,8 @@ final class PostOps {
       NullableSetOps('previousStatus', (v) => v.name);
   ListOps<String> get tags => const ListOps('tags');
   NullableListOps<int> get ranks => const NullableListOps('ranks');
-  SetOps<Map<String, Object?>> get meta => const SetOps('meta');
-  NullableSetOps<Map<String, Object?>> get extra =>
-      const NullableSetOps('extra');
+  MapOps get meta => const MapOps('meta');
+  NullableMapOps get extra => const NullableMapOps('extra');
   SetOps<Pointer<User>> get author =>
       SetOps('author', (v) => v.encode(const $UserSchema()));
   NullableSetOps<Pointer<User>> get editor =>
@@ -113,8 +112,8 @@ final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
     previousStatus: json.optEnum('previousStatus', PostStatus.values),
     tags: json.requireList<String>('tags'),
     ranks: json.optList<int>('ranks'),
-    meta: json.require<Map<String, Object?>>('meta'),
-    extra: json.opt<Map<String, Object?>>('extra'),
+    meta: json.requireMap('meta'),
+    extra: json.optMap('extra'),
     author: json.requirePointer('author', const $UserSchema()),
     editor: json.optPointer('editor', const $UserSchema()),
     coauthors: json.requirePointerList('coauthors', const $UserSchema()),
@@ -147,8 +146,8 @@ final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
     'previousStatus': value.previousStatus?.name,
     'tags': value.tags,
     'ranks': value.ranks,
-    'meta': value.meta,
-    'extra': value.extra,
+    'meta': encodeValue(value.meta),
+    'extra': encodeValue(value.extra),
     'author': value.author.encode(const $UserSchema()),
     'editor': value.editor?.encode(const $UserSchema()),
     'coauthors': [

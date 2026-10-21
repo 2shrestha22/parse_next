@@ -240,16 +240,21 @@ _Field _field(String model, FormalParameterElement p, String key) {
       _element(args[0]) == 'String' &&
       args[1].isDartCoreObject &&
       args[1].nullabilitySuffix == NullabilitySuffix.question) {
-    return plain('ExistsField', '<$model>', 'Map<String, Object?>', 'Set');
+    return (
+      fields: 'MapField<$model> get $name => const MapField($k);',
+      ops: '${n}MapOps get $name => const ${n}MapOps($k);',
+      decode: 'json.${read}Map($k)',
+      encode: '$k: encodeValue($value),',
+    );
   }
-  if (_parseFile.isExactlyType(type)) return wire('ExistsField', 'ParseFile');
+  if (_parseFile.isExactlyType(type)) return wire('FileField', 'ParseFile');
   if (_geoPoint.isExactlyType(type)) return wire('GeoField', 'GeoPoint');
-  if (_polygon.isExactlyType(type)) return wire('ExistsField', 'Polygon');
+  if (_polygon.isExactlyType(type)) return wire('PolygonField', 'Polygon');
   if (_pointer.isExactlyType(type)) {
     final x = target(args[0]);
     return (
       fields:
-          'PointerField<$model, $x> get $name => '
+          'PointerField<$model, $x, ${x}Fields> get $name => '
           'const PointerField($k, \$${x}Schema());',
       ops:
           '${n}SetOps<Pointer<$x>> get $name => '
@@ -271,7 +276,7 @@ _Field _field(String model, FormalParameterElement p, String key) {
     return (
       fields:
           'RelationField<$model, $x> get $name => '
-          'const RelationField($k, \$${model}Schema());',
+          'const RelationField($k, \$${model}Schema(), \$${x}Schema());',
       ops:
           'RelationOps<$x> get $name => '
           'const RelationOps($k, \$${x}Schema());',
@@ -296,7 +301,7 @@ _Field _field(String model, FormalParameterElement p, String key) {
       final each = 'p.encode(const \$${x}Schema())';
       return (
         fields:
-            'PointerListField<$model, $x> get $name => '
+            'PointerListField<$model, $x, ${x}Fields> get $name => '
             'PointerListField($k, const \$${x}Schema());',
         ops:
             '${n}ListOps<Pointer<$x>> get $name => '
@@ -494,7 +499,10 @@ _Wire _wire(DartType type, Element at, {required bool docs}) {
       _element(args[0]) == 'String' &&
       args[1].isDartCoreObject &&
       args[1].nullabilitySuffix == NullabilitySuffix.question) {
-    return typed('Map<String, Object?>', (v) => v);
+    return (
+      encode: (v) => 'encodeValue($v)',
+      decode: (read, k) => '${read}Map($k)',
+    );
   }
   for (final (checker, t) in [
     (_parseFile, 'ParseFile'),

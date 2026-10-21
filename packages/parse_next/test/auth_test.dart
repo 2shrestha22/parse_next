@@ -97,7 +97,7 @@ void main() {
       final r = s.requests.single;
       expect(r.method, method);
       expect(r.url.toString(), 'http://parse.test/parse$path');
-      expect(r.headers, {
+      expect({...r.headers}..remove('X-Parse-Client-Version'), {
         'X-Parse-Application-Id': 'app',
         'X-Parse-Session-Token': ?token,
         if (body != null) 'Content-Type': 'application/json',
@@ -185,6 +185,95 @@ void main() {
         '/requestPasswordReset',
         body: {'email': 'a@example.test'},
       );
+    });
+
+    test('requestEmailVerification, without the stored token', () async {
+      final s = Server((_) => ok(), store: Store(session('r:t')));
+      await s.auth.requestEmailVerification('a@example.test');
+      expectOnly(
+        s,
+        'POST',
+        '/verificationEmailRequest',
+        body: {'email': 'a@example.test'},
+      );
+    });
+
+    test('verifyPassword, a read without the stored token', () async {
+      final s = Server((_) => ok(ann), store: Store(session('r:t')));
+      expect((await s.auth.verifyPassword('ann', 'pw')).id, 'u1');
+      expectOnly(
+        s,
+        'POST',
+        '/verifyPassword',
+        body: {'_method': 'GET', 'username': 'ann', 'password': 'pw'},
+      );
+      expect(s.store.value, session('r:t'));
+    });
+
+    test('linkWith and unlink, on the stored user', () async {
+      final s = Server(
+        (_) => ok({'updatedAt': at}),
+        store: Store(session('r:t')),
+      );
+      await s.auth.linkWith('anonymous', {'id': 'x'});
+      await s.auth.unlink('anonymous');
+      expect([for (final r in s.requests) r.method], ['PUT', 'PUT']);
+      expect(s.requests.first.url.path, '/parse/users/u1');
+      expect(s.tokens, ['r:t', 'r:t']);
+      expect(
+        [for (final r in s.requests) jsonDecode(r.body)],
+        [
+          {
+            'authData': {
+              'anonymous': {'id': 'x'},
+            },
+          },
+          {
+            'authData': {'anonymous': null},
+          },
+        ],
+      );
+    });
+
+    test('updatePassword keeps the new session the server returns', () async {
+      final s = Server(
+        (_) => ok({'updatedAt': at, 'sessionToken': 'r:new'}),
+        store: Store(session('r:t')),
+      );
+      await s.auth.updatePassword('new pw');
+      expectOnly(
+        s,
+        'PUT',
+        '/users/u1',
+        token: 'r:t',
+        body: {'password': 'new pw'},
+      );
+      expect(s.store.value, session('r:new'));
+    });
+
+    test('session, with the stored token', () async {
+      final s = Server(
+        (_) => ok({
+          'objectId': 's1',
+          'expiresAt': {'__type': 'Date', 'iso': at},
+          'installationId': 'iid',
+          'createdWith': {'action': 'login', 'authProvider': 'password'},
+        }),
+        store: Store(session('r:t')),
+      );
+      final info = await s.auth.session();
+      expectOnly(s, 'GET', '/sessions/me', token: 'r:t');
+      expect(info.id, 's1');
+      expect(info.expiresAt, DateTime.parse(at));
+      expect(info.installationId, 'iid');
+      expect(info.createdWith, {'action': 'login', 'authProvider': 'password'});
+    });
+
+    test('linkWith, updatePassword and the like need a user', () async {
+      final s = Server((_) => ok());
+      expect(() => s.auth.linkWith('anonymous', {}), throwsStateError);
+      expect(() => s.auth.updatePassword('x'), throwsStateError);
+      expect(s.requests, isEmpty);
     });
 
     test('current, nothing', () async {

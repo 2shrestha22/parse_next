@@ -57,12 +57,35 @@ void main() {
         ['u1', 'u2'],
       );
       expect(
-        await cloud.echoFile(value: const ParseFile(name: 'a.txt')),
-        const ParseFile(name: 'a.txt'),
+        await cloud.echoFile(
+          value: const ParseFile(name: 'a.txt', url: 'http://files.test/a.txt'),
+        ),
+        const ParseFile(name: 'a.txt', url: 'http://files.test/a.txt'),
       );
       expect(await cloud.echoGeoPoint(value: spot), spot);
       expect(await cloud.echoPolygon(value: area), area);
       expect(await cloud.echoBytes(value: bytes), bytes);
+    });
+
+    test('a map keeps dates, points and files at any depth', () async {
+      const file = ParseFile(name: 'f.png', url: 'http://files.test/f.png');
+      final typed = {
+        'at': at,
+        'list': [at, spot, file],
+        'nested': {'spot': spot, 'n': 1},
+      };
+      expect(await cloud.echoMap(value: typed), typed);
+    });
+
+    test('cloud code sees the client version and installation id', () async {
+      final c = backend.client(installationId: 'install-1');
+      addTearDown(c.close);
+      final r = (await c.callFunction(
+        'headers',
+        const Json({}),
+      )).requireMap('result');
+      expect(r['clientVersion'], matches(RegExp(r'^parse-next/\d+\.\d+')));
+      expect(r['installationId'], 'install-1');
     });
 
     test('nullable parameter and return types round-trip a value', () async {
@@ -87,8 +110,10 @@ void main() {
         'u2',
       );
       expect(
-        await cloud.echoNullableFile(value: const ParseFile(name: 'b.txt')),
-        const ParseFile(name: 'b.txt'),
+        await cloud.echoNullableFile(
+          value: const ParseFile(name: 'b.txt', url: 'http://files.test/b.txt'),
+        ),
+        const ParseFile(name: 'b.txt', url: 'http://files.test/b.txt'),
       );
       expect(await cloud.echoNullableGeoPoint(value: spot), spot);
       expect(await cloud.echoNullablePolygon(value: area), area);

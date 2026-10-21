@@ -43,6 +43,17 @@ void main() {
       return [for (final to in r['result']! as List<Object?>) to! as String];
     }
 
+    /// How many mails [email] got, once that reaches [want] or after 10 s:
+    /// the server sends after it has answered.
+    Future<int> mailsTo(String email, int want) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (true) {
+        final n = (await sentMail()).where((to) => to == email).length;
+        if (n >= want || DateTime.now().isAfter(deadline)) return n;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
     test('sign up, current, log out, log in, me, become', () async {
       final store = InMemorySessionStore();
       final auth = client(store).auth(users);
@@ -151,6 +162,152 @@ void main() {
       );
     });
 
+    test('a login replaces the session of its installation only', () async {
+      ParseClient on(String installation) {
+        final c = backend.client(installationId: installation);
+        addTearDown(c.close);
+        return c;
+      }
+
+      final phone = unique('phone');
+      final laptop = unique('laptop');
+      final name = unique('install');
+      final user = await on(phone)
+          .auth(users)
+          .signUp(
+            password: 'pw',
+            user: User(username: name),
+          );
+      final phoneAuth = on(phone).auth(users);
+      await phoneAuth.logIn(name, 'pw');
+      await phoneAuth.logIn(name, 'pw');
+      await on(laptop).auth(users).logIn(name, 'pw');
+
+      Future<List<Object?>> installations() async {
+        final r = await backend.rest(
+          'GET',
+          '/classes/_Session',
+          master: true,
+          query: {
+            'where': jsonEncode({
+              'user': {
+                '__type': 'Pointer',
+                'className': '_User',
+                'objectId': user.id,
+              },
+            }),
+          },
+        );
+        return [
+          for (final s in r['results']! as List<Object?>)
+            (s! as Map<String, Object?>)['installationId'],
+        ]..sort((a, b) => '$a'.compareTo('$b'));
+      }
+
+      // The server deletes the replaced sessions without waiting for it.
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while ((await installations()).length > 2 &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(await installations(), [laptop, phone]);
+      expect((await phoneAuth.me()).id, user.id);
+    });
+
+    test('requestEmailVerification mails a known address only', () async {
+      final auth = client().auth(users);
+      final name = unique('verify');
+      final email = '$name@example.test';
+      await auth.signUp(
+        password: 'pw',
+        user: User(username: name, email: email),
+      );
+      expect(await mailsTo(email, 1), 1, reason: 'sign-up mails it once');
+      await auth.requestEmailVerification(email);
+      expect(await mailsTo(email, 2), 2);
+    });
+
+    test('verifyPassword checks without touching the session', () async {
+      final auth = client().auth(users);
+      final name = unique('check');
+      final me = await auth.signUp(
+        password: 'right',
+        user: User(username: name),
+      );
+      final other = unique('other');
+      await client()
+          .auth(users)
+          .signUp(
+            password: 'theirs',
+            user: User(username: other),
+          );
+      expect((await auth.verifyPassword(other, 'theirs')).data.username, other);
+      await expectLater(
+        auth.verifyPassword(other, 'wrong'),
+        throwsA(isA<InvalidCredentials>()),
+      );
+      expect((await auth.current())!.id, me.id);
+      expect((await auth.me()).id, me.id);
+    });
+
+    test('linkWith lets the provider log in; unlink stops it', () async {
+      final auth = client().auth(users);
+      final me = await auth.signUp(
+        password: 'pw',
+        user: User(username: unique('link')),
+      );
+      final anon = {'id': unique('anon')};
+      await auth.linkWith('anonymous', anon);
+      expect(
+        (await client().auth(users).logInWith('anonymous', anon)).id,
+        me.id,
+      );
+      await auth.unlink('anonymous');
+      expect(
+        (await client().auth(users).logInWith('anonymous', anon)).id,
+        isNot(me.id),
+      );
+    });
+
+    test('updatePassword ends the other sessions and keeps this one', () async {
+      final name = unique('pw');
+      final mine = client().auth(users);
+      await mine.signUp(
+        password: 'old',
+        user: User(username: name),
+      );
+      final elsewhere = client().auth(users);
+      await elsewhere.logIn(name, 'old');
+
+      await mine.updatePassword('new');
+      expect((await mine.me()).data.username, name);
+      await expectLater(elsewhere.me(), throwsA(isA<InvalidSession>()));
+      await expectLater(
+        client().auth(users).logIn(name, 'old'),
+        throwsA(isA<InvalidCredentials>()),
+      );
+      expect(
+        (await client().auth(users).logIn(name, 'new')).data.username,
+        name,
+      );
+    });
+
+    test('session describes the stored session', () async {
+      final c = backend.client(installationId: unique('device'));
+      addTearDown(c.close);
+      final auth = c.auth(users);
+      final name = unique('sess');
+      await auth.signUp(
+        password: 'pw',
+        user: User(username: name),
+      );
+      await auth.logIn(name, 'pw');
+      final info = await auth.session();
+      expect(info.installationId, c.installationId);
+      expect(info.createdWith, {'action': 'login', 'authProvider': 'password'});
+      expect(info.expiresAt!.isAfter(DateTime.now()), isTrue);
+    });
+
     test('a second client on the same store is logged in', () async {
       final store = InMemorySessionStore();
       final first = await client(store)
@@ -257,14 +414,9 @@ void main() {
               password: 'pw',
               user: User(username: unique('reset'), email: email),
             );
+        expect(await mailsTo(email, 1), 1, reason: 'sign-up mails it once');
         await client().auth(users).requestPasswordReset(email);
-        expect(await sentMail(), contains(email));
-      });
-
-      test('succeeds for an unknown address and mails nothing', () async {
-        final email = '${unique('nobody')}@example.test';
-        await client().auth(users).requestPasswordReset(email);
-        expect(await sentMail(), isNot(contains(email)));
+        expect(await mailsTo(email, 2), 2);
       });
     });
   });

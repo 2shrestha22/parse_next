@@ -14,10 +14,7 @@ for (const type of [
   'Ints', 'Map', 'Pointer', 'Pointers', 'File', 'GeoPoint', 'Polygon',
   'Bytes',
 ]) {
-  // A File param has no url, and returning a Parse.File without one crashes
-  // the server (`Parse._encode` throws outside any handler).
-  const echo = request =>
-    type === 'File' ? request.params.value?.toJSON() : request.params.value;
+  const echo = request => request.params.value;
   Parse.Cloud.define(`echo${type}`, echo);
   Parse.Cloud.define(`echoNullable${type}`, echo);
 }
@@ -56,3 +53,35 @@ Parse.Cloud.onLiveQueryEvent(({ event, clients }) => {
   }
 });
 Parse.Cloud.define('liveClients', () => liveClients);
+
+// Do nothing on purpose: a trigger alone makes parse-server decode every
+// object it sees into the JS SDK and encode it back (triggers.js), and a value
+// the SDK cannot represent fails there, or kills the server. Item has none, so
+// the queries on it still cover the path without them.
+// Each also keeps the context it got, for `contextOf`.
+const contexts = {};
+for (const className of ['Post', '_User', 'Signal']) {
+  for (const trigger of [
+    'beforeSave', 'afterSave', 'beforeDelete', 'afterDelete', 'beforeFind',
+    'afterFind',
+  ]) {
+    Parse.Cloud[trigger](className, request => {
+      contexts[`${trigger} ${className}`] = request.context;
+    });
+  }
+}
+Parse.Cloud.define('contextOf', request => contexts[request.params.trigger]);
+
+let savedFile;
+Parse.Cloud.beforeSave(Parse.File, request => {
+  savedFile = { metadata: request.file.metadata(), tags: request.file.tags() };
+});
+Parse.Cloud.define('savedFile', () => savedFile);
+
+Parse.Cloud.define('headers', request => ({
+  clientVersion: request.headers['x-parse-client-version'],
+  installationId: request.installationId,
+}));
+Parse.Cloud.beforeLogin(() => {});
+Parse.Cloud.afterLogin(() => {});
+Parse.Cloud.afterLogout(() => {});

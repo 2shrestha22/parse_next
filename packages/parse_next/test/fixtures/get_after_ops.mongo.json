@@ -51,6 +51,7 @@
       "className": "Author",
       "objectId": "obj0000003"
     },
+    "className": "Post",
     "coauthors": [
       {
         "__type": "Pointer",

@@ -13,6 +13,7 @@ final class Signal {
     this.at,
     this.place,
     this.links,
+    this.file,
   });
 
   final String name;
@@ -22,4 +23,5 @@ final class Signal {
   final DateTime? at;
   final GeoPoint? place;
   final List<Pointer<Signal>>? links;
+  final ParseFile? file;
 }

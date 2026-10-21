@@ -3,6 +3,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:parse_next/parse_next.dart';
 import 'package:parse_next_it/models/signal.dart';
@@ -77,6 +78,15 @@ void main() {
 
         await watch.confirmed(2);
         expect(watch.subscribed, 2);
+        expect(
+          watch.events.whereType<Disconnected<Signal>>(),
+          hasLength(1),
+          reason: 'one Disconnected between the two Subscribed',
+        );
+        expect(
+          watch.events.indexWhere((e) => e is Disconnected),
+          lessThan(watch.events.lastIndexWhere((e) => e is Subscribed)),
+        );
         final after = await c.create(Signal(name: name));
         await until(() => watch.about(after.id).isNotEmpty, reason: 'event');
         expect(watch.about(after.id).single, isA<Created<Signal>>());
@@ -84,6 +94,55 @@ void main() {
         expect(watch.done, isFalse);
       },
     );
+
+    test('a File field reaches create and update events', () async {
+      final c = client();
+      await c
+          .auth(const $UserSchema())
+          .become((await backend.signUp('up')).token);
+      final file = await c.uploadFile(
+        Uint8List.fromList([1, 2, 3]),
+        name: 'live.png',
+        contentType: 'image/png',
+      );
+      final signalsOf = c.collection(signals);
+      final name = unique('file');
+      final watch = Watch(signalsOf.where((f) => f.name.eq(name)).live());
+      await watch.confirmed();
+
+      final doc = await signalsOf.create(Signal(name: name, file: file));
+      await signalsOf.update(doc.id, (o) => [o.points.set(1)]);
+
+      await until(() => watch.about(doc.id).length >= 2, reason: '2 events');
+      for (final e in watch.about(doc.id).cast<Object>()) {
+        final got = switch (e) {
+          Created(:final doc) || Updated(:final doc) => doc.data.file,
+          _ => null,
+        };
+        expect(got, file);
+        expect(got?.url, file.url);
+      }
+      expect(watch.errors, isEmpty);
+    });
+
+    test('watch reports an update only when a watched field changed', () async {
+      final c = client().collection(signals);
+      final name = unique('watch');
+      final watch = Watch(
+        c.where((f) => f.name.eq(name)).live(watch: (f) => [f.points]),
+      );
+      await watch.confirmed();
+
+      final doc = await c.create(Signal(name: name, points: 1));
+      await c.update(doc.id, (o) => [o.label.set('quiet')]);
+      await c.update(doc.id, (o) => [o.points.set(2)]);
+      await until(() => watch.about(doc.id).length >= 2, reason: '2 events');
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(watch.about(doc.id), [
+        isA<Created<Signal>>(),
+        isA<Updated<Signal>>().having((e) => e.doc.data.points, 'points', 2),
+      ]);
+    });
 
     test('after cancel nothing arrives and the socket closes', () async {
       var now = await liveClients();

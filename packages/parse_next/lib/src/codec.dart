@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'exception.dart';
@@ -24,6 +25,17 @@ extension type const Json(Map<String, Object?> _map)
     final v = this[key];
     return v == null ? null : _as<T>(key, v);
   }
+
+  /// A `Map<String, Object?>` field or result, with the values inside
+  /// decoded as [decodeValue] does.
+  Map<String, Object?> requireMap(String key) =>
+      optMap(key) ?? (throw DecodeError(key, 'missing'));
+
+  Map<String, Object?>? optMap(String key) =>
+      switch (opt<Map<String, Object?>>(key)) {
+        null => null,
+        final m => _within(key, () => _decodeMap(m)),
+      };
 
   List<T> requireList<T extends Object>(String key) =>
       optList<T>(key) ?? (throw DecodeError(key, 'missing'));
@@ -192,6 +204,21 @@ final class GeoPoint {
     'longitude': longitude,
   };
 
+  /// The great-circle distance, on the sphere the server measures with.
+  double radiansTo(GeoPoint other) {
+    final lat1 = latitude * pi / 180;
+    final lat2 = other.latitude * pi / 180;
+    final dLat = lat2 - lat1;
+    final dLng = (other.longitude - longitude) * pi / 180;
+    final a =
+        pow(sin(dLat / 2), 2) + cos(lat1) * cos(lat2) * pow(sin(dLng / 2), 2);
+    return 2 * asin(sqrt(min(a, 1)));
+  }
+
+  double kilometersTo(GeoPoint other) => radiansTo(other) * _earthKm;
+
+  double milesTo(GeoPoint other) => radiansTo(other) * _earthMiles;
+
   @override
   bool operator ==(Object other) =>
       other is GeoPoint &&
@@ -226,6 +253,27 @@ final class Polygon {
 
   final List<GeoPoint> points;
 
+  /// Whether [point] is inside or on the edge, planar on latitude and
+  /// longitude as in the JS SDK; the server's `containsPoint` query measures
+  /// on a sphere on Mongo, which differs near long edges.
+  bool containsPoint(GeoPoint point) {
+    var inside = false;
+    for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
+      final a = points[i];
+      final b = points[j];
+      if (_onSegment(point, a, b)) return true;
+      if ((a.longitude > point.longitude) != (b.longitude > point.longitude) &&
+          point.latitude <
+              (b.latitude - a.latitude) *
+                      (point.longitude - a.longitude) /
+                      (b.longitude - a.longitude) +
+                  a.latitude) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
   Map<String, Object?> toJson() => {
     '__type': 'Polygon',
     'coordinates': [
@@ -252,16 +300,17 @@ final class Polygon {
 }
 
 final class ParseFile {
-  const ParseFile({required this.name, this.url});
+  const ParseFile({required this.name, required this.url});
 
   final String name;
 
-  /// Not sent on encode and ignored by `==`: the server stores only the name
-  /// and builds the URL from its `publicServerURL`, or from the request host
-  /// when that is unset.
-  final String? url;
+  /// Ignored by `==`: the server stores only the name and builds the URL from
+  /// its `publicServerURL`, or from the request host when that is unset.
+  /// Required all the same: parse-server before 9.10.2 dies on a File without
+  /// one, anywhere in an object, when its class has a trigger (triggers.js).
+  final String url;
 
-  Map<String, Object?> toJson() => {'__type': 'File', 'name': name};
+  Map<String, Object?> toJson() => {'__type': 'File', 'name': name, 'url': url};
 
   @override
   bool operator ==(Object other) => other is ParseFile && other.name == name;
@@ -334,6 +383,79 @@ Map<String, Object?> encodeBytes(Uint8List bytes) => {
   '__type': 'Bytes',
   'base64': base64Encode(bytes),
 };
+
+/// The wire form of a value in a `Map<String, Object?>` field or param, at
+/// any depth, as the JS SDK encodes one: [DateTime], [GeoPoint], [Polygon]
+/// and [ParseFile] become their `__type` objects.
+///
+/// Throws [ArgumentError] for what the server would store wrongly: a
+/// [Uint8List], which Mongo returns from inside an object as raw BSON; a
+/// `__type` or `__op` key, which the server reads as a typed value or an
+/// operation; and any value JSON cannot hold, such as a [Pointer], which needs
+/// its class.
+Object? encodeValue(Object? value) => _encodeValue(value, 'value');
+
+Object? _encodeValue(Object? v, String path) => switch (v) {
+  null || String() || num() || bool() => v,
+  DateTime() => encodeDate(v),
+  GeoPoint() => v.toJson(),
+  Polygon() => v.toJson(),
+  ParseFile() => v.toJson(),
+  Uint8List() => throw ArgumentError.value(
+    v,
+    path,
+    'bytes inside a map come back from Mongo as raw BSON',
+  ),
+  List<Object?>() => [
+    for (var i = 0; i < v.length; i++) _encodeValue(v[i], '$path[$i]'),
+  ],
+  Map<String, Object?>() => {
+    for (final MapEntry(:key, value: e) in v.entries)
+      _mapKey(key, path): _encodeValue(e, '$path.$key'),
+  },
+  _ => throw ArgumentError.value(v, path, 'cannot be sent inside a map'),
+};
+
+String _mapKey(String key, String path) => key == '__type' || key == '__op'
+    ? throw ArgumentError.value(key, path, 'is read by the server as a type')
+    : key;
+
+/// The inverse of [encodeValue]: `__type` Date, GeoPoint, Polygon and File
+/// become Dart values at any depth; anything else, Pointers included, stays
+/// as the server sent it.
+Object? decodeValue(Object? value) => _decodeValue('value', value);
+
+Object? _decodeValue(String key, Object? v) => switch (v) {
+  {'__type': 'Date'} => _date(key, v),
+  {'__type': 'GeoPoint'} => _geoPoint(key, v),
+  {'__type': 'Polygon'} => _polygon(key, v),
+  {'__type': 'File'} => _file(key, v),
+  {'__type': _} => v,
+  Map<String, Object?>() => _decodeMap(v, key),
+  List<Object?>() => [
+    for (var i = 0; i < v.length; i++) _decodeValue('$key[$i]', v[i]),
+  ],
+  _ => v,
+};
+
+Map<String, Object?> _decodeMap(Map<String, Object?> m, [String? at]) => {
+  for (final MapEntry(:key, :value) in m.entries)
+    key: _decodeValue(at == null ? key : '$at.$key', value),
+};
+
+const _earthKm = 6371.0;
+const _earthMiles = 3958.8;
+
+bool _onSegment(GeoPoint p, GeoPoint a, GeoPoint b) {
+  final cross =
+      (p.latitude - a.latitude) * (b.longitude - a.longitude) -
+      (p.longitude - a.longitude) * (b.latitude - a.latitude);
+  return cross.abs() < 1e-12 &&
+      p.latitude >= min(a.latitude, b.latitude) &&
+      p.latitude <= max(a.latitude, b.latitude) &&
+      p.longitude >= min(a.longitude, b.longitude) &&
+      p.longitude <= max(a.longitude, b.longitude);
+}
 
 T _as<T extends Object>(String key, Object? v) {
   if (v is num) {
@@ -453,7 +575,10 @@ ParseFile _file(String key, Object? v) {
   final j = Json(_typed(key, v, 'File'));
   return _within(
     key,
-    () => ParseFile(name: j.require<String>('name'), url: j.opt<String>('url')),
+    () => ParseFile(
+      name: j.require<String>('name'),
+      url: j.require<String>('url'),
+    ),
   );
 }
 

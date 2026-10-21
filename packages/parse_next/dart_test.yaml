@@ -1,0 +1,5 @@
+tags:
+  # Code that behaves differently once compiled to JavaScript, where every
+  # number is a double and DateTime has no microseconds. Only these tests also
+  # run in Chrome; the rest would test the compiler, not parse_next.
+  platform:

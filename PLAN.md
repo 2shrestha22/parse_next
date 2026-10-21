@@ -34,26 +34,26 @@ Package names `parse_next` and `parse_next_generator` were unclaimed on pub.dev 
 | G2 | No `dynamic` in `lib/`. JSON is `Object?` / `Json`. | `grep -rn '\bdynamic\b' packages/*/lib` finds nothing |
 | G3 | `strict-casts`, `strict-inference`, `strict-raw-types` | `dart analyze --fatal-infos` is clean |
 | G4 | Formatted | `dart format --set-exit-if-changed .` |
-| G5 | Runs on VM and web | unit tests run with `-p vm,chrome` |
-| G6 | No silent retries, no hidden state | `MockClient` tests assert exact request counts |
+| G5 | Runs on VM and web | unit tests run on the VM; the `platform` ones, for code that differs once compiled to JavaScript, also in Chrome |
+| G6 | No retries unless the app sets `attempts` or `idempotency`, no hidden state | `MockClient` tests assert exact request counts |
 | G7 | Every Parse behavior the SDK depends on is proved against a real server | integration suite |
 | G8 | The type-safety promises are tested | compile-fail suite |
 | G9 | No skipped test without a reason string | CI fails on `skip: true` |
 
 Pinned at the start and changed only on purpose:
 - the Dart SDK lower bound: **3.8.0**, the oldest SDK the code can compile on. CI runs one pinned SDK, **3.13.5**, with the lockfile enforced
-- the `parse-server` image: **`parseplatform/parse-server:9.10.5`**, the latest release; older servers are not tested
+- the `parse-server` image: **`parseplatform/parse-server:9.9.0`**, the version the app in production runs; other servers are not tested
 - Mongo and Postgres versions: **`mongo:8.0.34`**, **`postgis/postgis:18-3.6`** pinned by digest
 
 ## How things get verified
 
 1. **Golden JSON tests.** The wire format is compared exactly against real server responses captured in Phase 0. Fixtures are never written by hand.
-2. **Integration tests.** They run against `parse-server` in Docker Compose, on both Mongo and Postgres. An operation one database doesn't support is skipped there with a reason and documented.
-3. **Oracle query tests.** The database is seeded with 200 deterministic objects (`Random(42)`). Every query result must equal the same filter applied to the seed list in plain Dart.
+2. **Integration tests.** They run against `parse-server` in Docker Compose, on both Mongo and Postgres. An operation one database doesn't support is skipped there with a reason and documented. They test the SDK, not the server: each would fail if parse_next built a request wrongly, read a response wrongly, or relied on a server behavior that does not hold (G7). How the server applies a request the SDK sends correctly, such as role inheritance, sort order or atomic increments, is parse-server's to test.
+3. **Oracle query tests.** The database is seeded with 200 deterministic objects (`Random(42)`). Each condition's result must equal the same filter applied to the seed list in plain Dart, which proves the server reads the JSON the SDK sends as the SDK means it.
 4. **Compile-fail suite.** Each `test/compile_fail/*.dart` file starts with the analyzer error code it must produce. A test runs `dart analyze --format=machine` on each file and checks the code. The folder is excluded from the normal analyze run.
 5. **Generator golden tests.** `build_test`'s `testBuilder` must produce byte-identical output.
 
-## Server behavior found so far (parse-server 9.10.5)
+## Server behavior found so far (parse-server 9.9.0)
 
 Later phases must follow these:
 
@@ -78,13 +78,27 @@ Later phases must follow these:
 | `2.0` comes back as `2`. | Phase 1 |
 | A unique index treats a missing field as null on Mongo (only one object may lack it) but not on Postgres. | Phase 3 |
 | File URLs follow the request host. Public file upload is off by default. | Phase 8 |
+| A File without `url` kills the server process when its class has any trigger, also nested in an Object field: the trigger's `Parse.File` has no URL, and `_getSaveJSON` throws `Tried to encode an unsaved file.` in `success` in `triggers.js`. 9.10.2 fills the URL in first (`resolveFileUrls` in `RestWrite.js`). `ParseFile.url` is required, and the fixture server registers a no-op trigger of every kind on Post, `_User` and Signal so that the suites go through the JS SDK the way an app with cloud code does. | Phase 8 |
+| With an `afterFind` trigger, every returned object carries its `className`; with a `_User` `beforeSave`, sign-up also returns `username`. | Phase 3, 6 |
+| A `where` in the URL fails with 431 past Node's 16 KB header limit, about 1,000 ids in `oneOf`. Queries are sent as `POST` with `_method: GET` and the query in the JSON body (`allowMethodOverride` in middlewares.js), as the JS SDK sends every request. | Phase 4 |
+| Numbers are JS doubles on the server: an int above 2^53 is stored rounded, without an error. A NUL character in a string is a 500 on Mongo. Bytes inside an Object field come back from Mongo as the raw BSON `{buffer, sub_type, position}`. | Phase 1, 3 |
+| Without `X-Parse-Installation-Id` every login adds a `_Session`; the server replaces a user's earlier session only for the same installation (`destroyDuplicatedSessions` in RestWrite.js). The header is not in the default CORS `allowHeaders`, and a `_InstallationId` in the body is read only with `_ApplicationId` there too (`handleParseHeaders` in middlewares.js), so `ParseClient.installationId` is sent as the header. | Phase 6 |
 | A Polygon needs at least 3 distinct vertices, or the write fails (`PolygonCoder.JSONToDatabase` in `MongoTransform.js`). `Polygon` checks this at construction. | Phase 1, 3 |
 | A create returns only `objectId` and `createdAt`, not `updatedAt`; a GET straight after has both. | Phase 3 |
 | The file upload response is `{name, url}` without `__type`, unlike a File field. | Phase 8 |
+| An `X-Parse-Client-Version` of letters followed by digits names an SDK; for one parse-server does not know, a create or update response leaves out the `{"__op":"Delete"}` of a field a trigger unset (`supportsForwardDelete` in ClientSDK.js). parse_next sends `parse-next/<version>`, which names none. | Phase 2 |
+| An update response carries the result of every `Increment`, `Add`, `AddUnique` and `Remove` and every field a `beforeSave` changed; for a dotted key it carries only the changed leaves, `{"meta":{"n":3}}`, or the whole map when the class has a trigger. `UpdateResult.applyTo` merges those. | Phase 3 |
+| On a class with a trigger, a dotted key deeper than one level is stored one level up (`meta.a.b = 1` stores `meta.a = 1`), and two dotted keys of one map in an update are a 500 on Mongo (`Updating the path 'meta' would create a conflict`): the JS SDK expands each into the whole map in `_getSaveJSON`. `MapOps` takes one key, once per map. | Phase 3 |
+| Mongo writes a `$containedBy` as a top-level `$nor` and a `$text` as a top-level `$text`, so two of either in one where object overwrite each other (`transformWhere` in MongoTransform.js); `&` nests them in `$and`. | Phase 4 |
+| LiveQuery matching (QueryTools.js): `$containedBy` on an absent field throws and drops the event, so `live()` adds `$exists`; `$in` and `$nin` compare a Date by identity and never match one; `$select`, `$dontSelect`, `$inQuery` and `$notInQuery` never match. | Phase 9 |
+| `X-Parse-Cloud-Context` is the only way to send `context` with a header-authenticated request: `_context` in the body is read only together with `_ApplicationId` (`handleParseHeaders` in middlewares.js). The same holds for `_InstallationId`. | Phase 3 |
+| File `metadata` and `tags` are read only from a streamed upload, as `X-Parse-File-Metadata` and `X-Parse-File-Tags` with `X-Parse-Upload-Mode: stream` (`createHandler` in FilesRouter.js). | Phase 8 |
+| With `idempotencyOptions`, a repeated `X-Parse-Request-Id` is answered with 159 `Duplicate request` and not applied again. | Phase 2 |
+| `verificationEmailRequest` needs `verifyUserEmails`. A password change deletes every session of the user and returns a new `sessionToken` (`handleFollowup` in RestWrite.js). | Phase 6 |
 | An uncaught internal error is 500 `{"code":1,"message":…}`: the text is under `message`, not `error` (`handleParseErrors` in `middlewares.js`). Any other 403 without a `code`, such as `unauthorized: master key is required`, is also sent with `res.end` and no `Content-Type`; every 403 without a code maps to `Unauthorized`. | Phase 2 |
 | After that uncaught 500, `handleParseErrors` calls `next(err)` and Express's `finalhandler` destroys the socket. The next request on the same pooled keep-alive connection fails with `Connection closed before full header was received` (a `NetworkError`), and that request never reaches the server. Only this uncaught-error path does it; the `"An internal server error occurred"` 500 keeps the socket. Decision: document it on `NetworkError` and keep keep-alive, since turning it off would cost a new TCP/TLS connection per request. The one expected path to this 500, a failed transactional batch, is sent with `Connection: close`, so the next call is unaffected. | Phase 2 |
 | A date constraint with a plain ISO string matches nothing on Mongo but is cast to a date and matches on Postgres. Queries always send `{"__type":"Date"}`. | Phase 4 |
-| `$nin` never matches an absent field on Postgres (`NOT IN`), but does on Mongo. `$in: []` matches absent fields on Postgres (`IS NULL`) and nothing on Mongo, so `oneOf([])` throws `ArgumentError` (`buildWhereClause` in `PostgresStorageAdapter.js`). | Phase 4 |
+| `$nin` never matches an absent field on Postgres (`NOT IN`), but does on Mongo. `$in: []` matches absent fields on Postgres (`IS NULL`) and nothing on Mongo, so an empty `oneOf` or `containsAny` is sent as `objectId $in []`, which matches nothing on both (`buildWhereClause` in `PostgresStorageAdapter.js`). | Phase 4 |
 | Ascending sorts put absent values first on Mongo and last on Postgres. Strings compare and sort by the database collation: binary on Mongo, `en_US.utf8` on Postgres (`"Banana" > "b"` there). The oracle uses lowercase a–f names, where both orders agree. | Phase 4 |
 | Equality on an array field (`{"tags":"a"}`) is a 500 on Postgres, so `contains` sends `$all`. | Phase 4 |
 | Only the Mongo adapter reads `$maxDistanceInKilometers`; Postgres reads only `$maxDistance` in radians, so `near` sends radians. In `$geoWithin.$polygon`, both adapters read a Polygon value's coordinates as `[longitude, latitude]`, so `withinPolygon` sends GeoPoints. | Phase 4 |
@@ -97,7 +111,7 @@ Later phases must follow these:
 | Password reset fails with 1 unless the server has an email adapter, `appName` and `publicServerURL` (`_throwOnBadEmailConfig` in `UsersRouter.js`). An unknown email gets the same `{}` as a known one while `passwordPolicy.resetPasswordSuccessOnInvalidEmail` is unset (default true). Once `publicServerURL` is set it also replaces the request host in file URLs (`mount` in `Config.js`), so Compose sets each server's own host URL. | Phase 6, 8 |
 | Deleting a `_Session` with the master key also evicts its token from the server's user cache (`del` in `rest.js`), so the revoked token fails on its very next request. | Phase 6 |
 | Function params become a JS `Date`, `Parse.File` and `Parse.Object` for Date, File and Pointer; GeoPoint, Polygon and Bytes stay plain JSON (`parseParams` in `FunctionsRouter.js`). The result goes through `Parse._encode`: a fetched `Parse.Object` is `{"__type":"Object","className",…}` with its fields inline and `createdAt`/`updatedAt` as plain ISO strings, an unfetched one a Pointer, and every other value is encoded as in a field. `undefined` leaves `result` out of the response; `null` sends `"result": null`. | Phase 7 |
-| Returning a File param from cloud code kills the server process: the SDK sends a File without `url`, and `Parse._encode` throws `Tried to encode an unsaved file.` inside `success` in `FunctionsRouter.js`, where nothing catches it. The fixture functions return `file.toJSON()` instead. | Phase 7 |
+| Returning a File param without `url` from cloud code kills the server process: `Parse._encode` throws `Tried to encode an unsaved file.` inside `success` in `FunctionsRouter.js`, where nothing catches it. | Phase 7 |
 | A thrown `Parse.Error` keeps its code (`resolveError` in `triggers.js`), with the usual HTTP status (101 is 404, 1 is 500, the rest 400). A cloud `throw new Parse.Error(209, …)` therefore clears the caller's stored session. An unknown function is 141 `Invalid function: "name"`. | Phase 7 |
 | Returning `request.user` includes the caller's `sessionToken` in the result; decoding into a model drops it. | Phase 7 |
 | A batch response is a top-level JSON array, one `{"success":…}` or `{"error":{code,error}}` per item. A create item's `success` carries `beforeSave` changes like a plain create. An empty `requests` list is 200 `[]`. | Phase 8 |
@@ -136,7 +150,6 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 **Verify**
 - CI runs analyze, format, unit tests (VM and Chrome) and integration tests, and all are green with zero tests.
-- `GET /parse/health` returns OK on both databases.
 - Fixtures exist for:
   - create, get and query on every field type
   - every op
@@ -179,7 +192,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 - mapping every failure to a `ParseException`
 
 **Rules**
-- No retries of any kind (G6).
+- No retries unless asked (G6): `attempts` retries reads, `idempotency` writes.
 - Error mapping:
   - a non-2xx response with `{code, error}` becomes a typed subclass
   - a 403 `{"error":"unauthorized"}` with no `code` (parse-server does send this) becomes `Unauthorized`
@@ -244,11 +257,10 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 **Verify**
 - Unit tests: each constraint compiles to exact golden `where` JSON.
-- Oracle tests: every constraint, every combination of two with `&` and `|`, and every sort order match the Dart filter on the 200-object seed.
+- Oracle tests: every constraint, the `&` and `|` shapes the SDK builds (one object, `$and`, `$or`), and sorting by several keys match the Dart filter on the 200-object seed.
 - `stream()` over 1,050 objects (past the default limit of 100) returns no duplicates and no gaps.
 - `include`: `loaded` is non-null when included and null otherwise.
-- Date regression: `createdAt.gt(t)` returns the right rows. A raw-JSON test with a plain ISO string returns zero rows, which documents why the encoding matters.
-  - Zero rows only on Mongo. Postgres casts the string and matches, so the test asserts every row there (see the table above).
+- Date regression: `createdAt.gt(t)` returns the right rows. Why the `{"__type":"Date"}` encoding matters is in the table above.
 - Compile-fail: `gt` with the wrong type, `startsWith` on a List, `include` on a non-pointer field, `matchesQuery` with a query on a different class.
 
 **Exit:** the oracle suite is green on both databases.
@@ -379,5 +391,5 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 - The master key stays out of v1.
 - The batch limit is settled: there is no default limit (see the Phase 8 Rules).
 - The lower bound is the oldest SDK whose language features and dependencies the code needs, and it is raised only when the code starts using something newer. It is not tested in CI, so as not to block apps on older Flutter. 3.8.0 is needed for null-aware map elements (`'key': ?value`), and by the generator's dependencies: it was raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
-- parse-server 9.10.5 is the latest release. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are versions parse-server's own CI tests. PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.
+- parse-server 9.9.0 is what the app in production runs: 9.10.0 rejects a `$relatedTo` query on a protected `_User` relation even for the user's own object. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are versions parse-server's own CI tests. PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.
 - Fixtures are normalized so a rerun writes identical files: object ids, session tokens and file names become placeholders numbered by first appearance (`obj0000001`, `r:session0001`, `file0001_hello.txt`), every `createdAt`/`updatedAt` becomes `2000-01-01T00:00:00.000Z`, the server URL becomes `http://parse.test/parse`, and object keys are sorted. A fixture that differs between backends after this is kept as `<name>.mongo.json` and `<name>.postgres.json`.

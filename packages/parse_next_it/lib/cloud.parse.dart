@@ -76,8 +76,8 @@ final class _$Cloud implements Cloud {
     required Map<String, Object?> value,
   }) async => (await _client.callFunction(
     'echoMap',
-    Json({'value': value}),
-  )).require<Map<String, Object?>>('result');
+    Json({'value': encodeValue(value)}),
+  )).requireMap('result');
 
   @override
   Future<Pointer<User>> echoPointer({required Pointer<User> value}) async =>
@@ -190,8 +190,8 @@ final class _$Cloud implements Cloud {
     Map<String, Object?>? value,
   }) async => (await _client.callFunction(
     'echoNullableMap',
-    Json({'value': ?value}),
-  )).opt<Map<String, Object?>>('result');
+    Json({if (value != null) 'value': encodeValue(value)}),
+  )).optMap('result');
 
   @override
   Future<Pointer<User>?> echoNullablePointer({Pointer<User>? value}) async =>

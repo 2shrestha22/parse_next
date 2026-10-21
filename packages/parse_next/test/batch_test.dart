@@ -168,12 +168,15 @@ void main() {
       expect(doc.data.count, isNull);
 
       expect(
-        (u.result as Err<DateTime>).error,
+        (u.result as Err<UpdateResult<Post>>).error,
         isA<ObjectNotFound>()
             .having((e) => e.message, 'message', 'Object not found.')
             .having((e) => e.status, 'status', 404),
       );
-      expect((r.result as Ok<DateTime>).value, DateTime.parse(updatedAt));
+      expect(
+        (r.result as Ok<UpdateResult<Post>>).value.updatedAt,
+        DateTime.parse(updatedAt),
+      );
       expect(d.result, isA<Ok<void>>());
       expect(
         (dup.result as Err<Doc<Post>>).error,
@@ -205,14 +208,14 @@ void main() {
       final good = b.update(s.posts, 'c', (o) => [o.count.set(1)]);
       await b.send();
       expect(
-        (bad.result as Err<DateTime>).error,
+        (bad.result as Err<UpdateResult<Post>>).error,
         isA<DecodeError>().having((e) => e.key, 'key', '[0].updatedAt'),
       );
       expect(
-        (odd.result as Err<DateTime>).error,
+        (odd.result as Err<UpdateResult<Post>>).error,
         isA<DecodeError>().having((e) => e.key, 'key', '[1]'),
       );
-      expect(good.result, isA<Ok<DateTime>>());
+      expect(good.result, isA<Ok<UpdateResult<Post>>>());
     });
 
     test('a result count that does not match throws DecodeError', () async {
@@ -363,6 +366,66 @@ void main() {
         ),
         throwsA(isA<OtherParseError>().having((e) => e.code, 'code', 122)),
       );
+    });
+  });
+
+  group('chunks', () {
+    /// Answers each request with as many results as it has items.
+    ParseClient echo(List<int> sizes, List<bool> transactions) => ParseClient(
+      server: Uri.parse('http://h/parse'),
+      appId: 'app',
+      httpClient: MockClient((r) async {
+        final body = jsonDecode(r.body) as Map<String, Object?>;
+        final items = body['requests']! as List<Object?>;
+        sizes.add(items.length);
+        transactions.add(body['transaction'] == true);
+        return http.Response(
+          jsonEncode([
+            for (final item in items)
+              {
+                'success': {
+                  'objectId':
+                      ((item! as Map<String, Object?>)['body']!
+                          as Map<String, Object?>)['title'],
+                  'createdAt': createdAt,
+                },
+              },
+          ]),
+          200,
+        );
+      }),
+    );
+
+    test('go 20 items to a request, results in order', () async {
+      final sizes = <int>[];
+      final transactions = <bool>[];
+      final client = echo(sizes, transactions);
+      final posts = client.collection(postSchema);
+      final b = client.batch();
+      final ops = [
+        for (var i = 0; i < 45; i++) b.create(posts, Post(title: 'p$i')),
+      ];
+      await b.send();
+      expect(sizes, [20, 20, 5]);
+      expect(transactions, [false, false, false]);
+      expect(
+        [for (final op in ops) (op.result as Ok<Doc<Post>>).value.id],
+        [for (var i = 0; i < 45; i++) 'p$i'],
+      );
+    });
+
+    test('a transaction is never split', () async {
+      final sizes = <int>[];
+      final transactions = <bool>[];
+      final client = echo(sizes, transactions);
+      final posts = client.collection(postSchema);
+      final b = client.batch();
+      for (var i = 0; i < 45; i++) {
+        b.create(posts, Post(title: 'p$i'));
+      }
+      await b.send(transaction: true);
+      expect(sizes, [45]);
+      expect(transactions, [true]);
     });
   });
 }

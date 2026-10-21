@@ -109,7 +109,7 @@ Post sent({ParseFile? attachment}) => Post(
     GeoPoint(1, 1),
     GeoPoint(1, 0),
   ]),
-  attachment: attachment ?? const ParseFile(name: 'file0001_hello.txt'),
+  attachment: attachment ?? file,
   data: Uint8List.fromList([0, 1, 2, 255]),
   author: const Pointer('obj0000003'),
   coauthors: const [Pointer('obj0000003'), Pointer('obj0000004')],
@@ -514,12 +514,15 @@ void main() {
       expect(doc.createdAt, epoch);
       expect(doc.data.name, 'Cy');
       expect(
-        (missing.result as Err<DateTime>).error,
+        (missing.result as Err<UpdateResult<Post>>).error,
         isA<ObjectNotFound>()
             .having((e) => e.message, 'message', 'Object not found.')
             .having((e) => e.status, 'status', 404),
       );
-      expect((updated.result as Ok<DateTime>).value, epoch);
+      expect(
+        (updated.result as Ok<UpdateResult<Author>>).value.updatedAt,
+        epoch,
+      );
       expect(deleted.result, isA<Ok<void>>());
     });
 

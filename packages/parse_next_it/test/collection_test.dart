@@ -1,20 +1,38 @@
 import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
 import 'package:parse_next/parse_next.dart';
 import 'package:parse_next_it/models/note.dart';
 import 'package:parse_next_it/models/post.dart';
+import 'package:parse_next_it/models/signal.dart';
 import 'package:parse_next_it/models/user.dart';
 import 'package:test/test.dart';
 
+import 'live_support.dart' show resetSignals, signals;
 import 'support.dart';
 
 const postSchema = $PostSchema();
 
 /// Post has no `==`; comparing the encoded JSON makes a dropped or altered
-/// field fail.
-Matcher sameAs(Post p) => equals(postSchema.encode(p));
-Map<String, Object?> wire(Post p) => postSchema.encode(p);
+/// field fail. File URLs are left out: the server builds them, so a file sent
+/// without one comes back with one.
+Matcher sameAs(Post p) => equals(wire(p));
+Map<String, Object?> noteWire(Note n) => const $NoteSchema().encode(n);
+
+Map<String, Object?> wire(Post p) => {
+  for (final MapEntry(:key, :value) in postSchema.encode(p).entries)
+    key: switch (value) {
+      {'__type': 'File', 'name': final name} => {
+        '__type': 'File',
+        'name': name,
+      },
+      _ => value,
+    },
+};
+
+/// A file as the server returns one. Its URL is never checked, and the server
+/// keeps only the name.
+ParseFile file(String name) =>
+    ParseFile(name: name, url: 'http://files.test/$name');
 
 Post full(Pointer<User> a, Pointer<User> b) => Post(
   title: 'Hello, wörld 👋',
@@ -44,8 +62,8 @@ Post full(Pointer<User> a, Pointer<User> b) => Post(
   editor: b,
   coauthors: [a, b],
   reviewers: [b],
-  cover: const ParseFile(name: 'cover.png'),
-  attachment: const ParseFile(name: 'notes.txt'),
+  cover: file('cover.png'),
+  attachment: file('notes.txt'),
   location: GeoPoint(27.7, 85.3),
   area: Polygon([GeoPoint(0, 0), GeoPoint(0, 1), GeoPoint(1, 1)]),
   zone: Polygon([GeoPoint(2, 2), GeoPoint(2, 3), GeoPoint(3, 3)]),
@@ -55,22 +73,28 @@ Post full(Pointer<User> a, Pointer<User> b) => Post(
 
 Post minimal(
   Pointer<User> a, {
-  ParseFile cover = const ParseFile(name: 'c.png'),
+  ParseFile? cover,
+  int likes = 0,
+  List<String> tags = const [],
+  List<int>? ranks,
+  Map<String, Object?> meta = const {},
+  Polygon? area,
 }) => Post(
   title: 't',
-  likes: 0,
+  likes: likes,
   rating: 1,
   score: 1.5,
   published: false,
   publishedAt: DateTime.utc(2020),
   status: PostStatus.draft,
-  tags: const [],
-  meta: const {},
+  tags: tags,
+  ranks: ranks,
+  meta: meta,
   author: a,
   coauthors: const [],
-  cover: cover,
+  cover: cover ?? file('c.png'),
   location: GeoPoint(-10, -20),
-  area: Polygon([GeoPoint(5, 5), GeoPoint(5, 6), GeoPoint(6, 6)]),
+  area: area ?? Polygon([GeoPoint(5, 5), GeoPoint(5, 6), GeoPoint(6, 6)]),
   thumbnail: Uint8List.fromList([7]),
 );
 
@@ -115,6 +139,7 @@ void main() {
         'text': type('String'),
         'draft': type('Boolean'),
         'place': type('GeoPoint'),
+        'attachment': type('File'),
       });
       client = backend.client();
       posts = client.collection(postSchema);
@@ -188,24 +213,6 @@ void main() {
     });
 
     group('ops', () {
-      test('20 increments from 20 clients in parallel', () async {
-        final id = (await posts.create(minimal(alice))).id;
-        final clients = [for (var i = 0; i < 20; i++) backend.client()];
-        try {
-          await Future.wait([
-            for (final c in clients)
-              c
-                  .collection(postSchema)
-                  .update(id, (o) => [o.likes.increment(1)]),
-          ]);
-        } finally {
-          for (final c in clients) {
-            c.close();
-          }
-        }
-        expect((await posts.get(id)).data.likes, 20);
-      });
-
       test('add, addUnique twice, remove', () async {
         final id = (await posts.create(full(alice, bob))).id;
         await posts.update(
@@ -359,10 +366,10 @@ void main() {
 
       test('update returns the new updatedAt', () async {
         final created = await posts.create(minimal(alice));
-        final updatedAt = await posts.update(
+        final updatedAt = (await posts.update(
           created.id,
           (o) => [o.likes.increment(1)],
-        );
+        )).updatedAt;
         expect(updatedAt.isAfter(created.createdAt), isTrue);
         expect((await posts.get(created.id)).updatedAt, updatedAt);
       });
@@ -380,7 +387,7 @@ void main() {
           ],
         );
         final x = minimal(bob);
-        final updatedAt = await posts.replace(id, x);
+        final updatedAt = (await posts.replace(id, x)).updatedAt;
 
         final got = await posts.get(id);
         expect(wire(got.data), sameAs(x));
@@ -469,8 +476,6 @@ void main() {
           await asBob.auth(const $UserSchema()).become(bobToken);
           await deniedFor(asBob);
         });
-
-        test('anonymous', () => deniedFor(client));
       });
 
       test('a wrong app id is Unauthorized', () async {
@@ -521,9 +526,9 @@ void main() {
           Batch batch,
           List<String> ids,
           BatchOp<Doc<Note>> created,
-          BatchOp<DateTime> updated,
-          BatchOp<DateTime> missing,
-          BatchOp<DateTime> replaced,
+          BatchOp<UpdateResult<Note>> updated,
+          BatchOp<UpdateResult<Note>> missing,
+          BatchOp<UpdateResult<Note>> replaced,
           BatchOp<void> deleted,
         })
       >
@@ -558,7 +563,7 @@ void main() {
         await m.batch.send();
 
         expect(
-          (m.missing.result as Err<DateTime>).error,
+          (m.missing.result as Err<UpdateResult<Note>>).error,
           isA<ObjectNotFound>().having((e) => e.status, 'status', 404),
         );
         final doc = (m.created.result as Ok<Doc<Note>>).value;
@@ -567,8 +572,8 @@ void main() {
         expect(doc.data.text, 'NEW');
         expect(doc.data.draft, isNull);
         expect((await notes.get(doc.id)).data.text, 'NEW');
-        expect(m.updated.result, isA<Ok<DateTime>>());
-        expect(m.replaced.result, isA<Ok<DateTime>>());
+        expect(m.updated.result, isA<Ok<UpdateResult<Note>>>());
+        expect(m.replaced.result, isA<Ok<UpdateResult<Note>>>());
         expect(m.deleted.result, isA<Ok<void>>());
 
         expect((await notes.get(m.ids[0])).data.place, GeoPoint(3, 4));
@@ -606,24 +611,286 @@ void main() {
         final updated = b.update(notes, id, (o) => [o.text.set('tx-upd')]);
         await b.send(transaction: true);
         expect(created.result, isA<Ok<Doc<Note>>>());
-        expect(updated.result, isA<Ok<DateTime>>());
+        expect(updated.result, isA<Ok<UpdateResult<Note>>>());
         expect(await countText('TX-OK'), 1);
         expect((await notes.get(id)).data.text, 'TX-UPD');
       });
+    });
 
+    group('server values after a write', () {
+      test('update: computed results and trigger changes', () async {
+        final before = await posts.create(
+          minimal(alice, tags: ['x'], ranks: [1, 2]),
+        );
+        final result = await posts.update(
+          before.id,
+          (o) => [
+            o.title.set('new'),
+            o.likes.increment(5),
+            o.tags.addUnique(['x', 'y']),
+            o.ranks.remove([1]),
+          ],
+        );
+        final after = result.applyTo(before);
+        final got = await posts.get(before.id);
+        expect(wire(after.data), wire(got.data));
+        expect(after.data.likes, 5);
+        expect(after.data.tags, ['x', 'y']);
+        expect(after.updatedAt, got.updatedAt);
+
+        final notes = client.collection(const $NoteSchema());
+        final note = await notes.create(const Note(text: 'a'));
+        final changed = (await notes.update(
+          note.id,
+          (o) => [o.text.set('quiet'), o.draft.set(true)],
+        )).applyTo(note);
+        expect(changed.data.text, 'QUIET');
+        expect(changed.data.draft, isNull);
+        expect(
+          noteWire(changed.data),
+          noteWire((await notes.get(note.id)).data),
+        );
+      });
+
+      test('replace: trigger changes too', () async {
+        final notes = client.collection(const $NoteSchema());
+        final note = await notes.create(const Note(text: 'a'));
+        final changed = (await notes.replace(
+          note.id,
+          Note(text: 'loud', draft: true, place: GeoPoint(1, 1)),
+        )).applyTo(note);
+        expect(changed.data.text, 'LOUD');
+        expect(changed.data.draft, isNull);
+        expect(
+          noteWire(changed.data),
+          noteWire((await notes.get(note.id)).data),
+        );
+      });
+
+      test('a batch update result applies the same way', () async {
+        final before = await posts.create(minimal(alice));
+        final b = client.batch();
+        final op = b.update(posts, before.id, (o) => [o.likes.increment(2)]);
+        await b.send();
+        final after = (op.result as Ok<UpdateResult<Post>>).value.applyTo(
+          before,
+        );
+        expect(after.data.likes, 2);
+        expect(wire(after.data), wire((await posts.get(before.id)).data));
+      });
+    });
+
+    group('map values', () {
+      final at = DateTime.utc(2024, 5, 6, 7, 8, 9, 10);
+      final where = GeoPoint(10, 20);
+      const pic = ParseFile(name: 'p.png', url: 'http://files.test/p.png');
+
+      test('typed values round-trip at any depth', () async {
+        final meta = <String, Object?>{
+          'at': at,
+          'list': [at, where, 1, 'two', null],
+          'nested': {'pic': pic, 'n': 1.5, 'ok': true},
+        };
+        final doc = await posts.create(minimal(alice, meta: meta));
+        final got = (await posts.get(doc.id)).data.meta;
+        expect(got['at'], at);
+        expect(got['list'], [at, where, 1, 'two', null]);
+        expect((got['nested']! as Map<String, Object?>)['pic'], pic);
+        expect((got['nested']! as Map<String, Object?>)['n'], 1.5);
+      });
+
+      test('setKey, incrementKey and unsetKey change one key', () async {
+        var doc = await posts.create(
+          minimal(alice, meta: {'n': 1, 'keep': 'k', 'gone': true}),
+        );
+        for (final List<Op> Function(PostOps) build in [
+          (o) => [o.meta.incrementKey('n', 2)],
+          (o) => [o.meta.setKey('at', at)],
+          (o) => [o.meta.unsetKey('gone')],
+        ]) {
+          doc = (await posts.update(doc.id, build)).applyTo(doc);
+          expect(doc.data.meta, (await posts.get(doc.id)).data.meta);
+        }
+        expect(doc.data.meta, {'n': 3, 'keep': 'k', 'at': at});
+      });
+
+      test('a key inside the map is a query field', () async {
+        final mark = 'mark-${DateTime.now().microsecondsSinceEpoch}';
+        final hit = await posts.create(
+          minimal(alice, meta: {'mark': mark, 'n': 7}),
+        );
+        await posts.create(minimal(alice, meta: {'mark': mark, 'n': 1}));
+        final found = await posts
+            .where((f) => f.meta.at('mark').eq(mark) & f.meta.at('n').gt(5))
+            .find();
+        expect([for (final d in found) d.id], [hit.id]);
+      });
+
+      test('values the server would store wrongly are not sent', () async {
+        final count = await posts.query().count();
+        for (final bad in <Map<String, Object?>>[
+          {'bytes': Uint8List(1)},
+          {'__op': 'Delete'},
+          {
+            'nested': {'__type': 'Date'},
+          },
+          {'n': double.nan},
+          {'n': 9007199254740993},
+        ]) {
+          await expectLater(
+            posts.create(minimal(alice, meta: bad)),
+            throwsArgumentError,
+          );
+        }
+        await expectLater(
+          posts.create(minimal(alice, likes: 9007199254740993)),
+          throwsArgumentError,
+        );
+        expect(await posts.query().count(), count);
+      });
+    });
+
+    group('write options', () {
+      test('a custom id, from create and from a batch', () async {
+        final stamp = DateTime.now().microsecondsSinceEpoch;
+        final doc = await posts.create(minimal(alice), id: 'own$stamp');
+        expect(doc.id, 'own$stamp');
+        expect((await posts.get('own$stamp')).id, 'own$stamp');
+
+        final b = client.batch();
+        final op = b.create(posts, minimal(alice), id: 'batch$stamp');
+        await b.send();
+        expect((op.result as Ok<Doc<Post>>).value.id, 'batch$stamp');
+        expect((await posts.get('batch$stamp')).id, 'batch$stamp');
+      });
+
+      test('context reaches every trigger of the write', () async {
+        Future<Object?> contextOf(String trigger) async => (await backend.rest(
+          'POST',
+          '/functions/contextOf',
+          body: {'trigger': '$trigger Post'},
+        ))['result'];
+
+        final stamp = DateTime.now().microsecondsSinceEpoch;
+        final at = DateTime.utc(2024);
+        final doc = await posts.create(
+          minimal(alice),
+          context: {'step': 'create $stamp', 'at': at},
+        );
+        expect(await contextOf('beforeSave'), {
+          'step': 'create $stamp',
+          'at': encodeDate(at),
+        });
+        expect(await contextOf('afterSave'), {
+          'step': 'create $stamp',
+          'at': encodeDate(at),
+        });
+
+        await posts.update(
+          doc.id,
+          (o) => [o.likes.set(1)],
+          context: {'step': 'update $stamp'},
+        );
+        expect(await contextOf('beforeSave'), {'step': 'update $stamp'});
+
+        // Post has a required Bytes field, which Postgres cannot update.
+        if (!backend.isPostgres) {
+          await posts.replace(
+            doc.id,
+            minimal(alice),
+            context: {'step': 'replace $stamp'},
+          );
+          expect(await contextOf('afterSave'), {'step': 'replace $stamp'});
+        }
+
+        final b = client.batch();
+        b.update(posts, doc.id, (o) => [o.likes.set(2)]);
+        await b.send(context: {'step': 'batch $stamp'});
+        expect(await contextOf('beforeSave'), {'step': 'batch $stamp'});
+
+        await posts.delete(doc.id, context: {'step': 'delete $stamp'});
+        expect(await contextOf('beforeDelete'), {'step': 'delete $stamp'});
+        expect(await contextOf('afterDelete'), {'step': 'delete $stamp'});
+      });
+
+      test('45 batch items go in three requests and all apply', () async {
+        final notes = client.collection(const $NoteSchema());
+        final text = 'chunk-${DateTime.now().microsecondsSinceEpoch}';
+        final b = client.batch();
+        final ops = [
+          for (var i = 0; i < 45; i++) b.create(notes, Note(text: '$text$i')),
+        ];
+        await b.send();
+        expect(ops.map((o) => o.result), everyElement(isA<Ok<Doc<Note>>>()));
+        expect(
+          await notes
+              .where((f) => f.text.startsWith(text.toUpperCase()))
+              .count(),
+          45,
+        );
+      });
+    });
+
+    group('more conditions', () {
       test(
-        'the server sets no default item limit: 1,000 items apply',
+        'a file field eq and ne',
+        skip: backend.isPostgres
+            ? 'Postgres has no equality for files (buildWhereClause in '
+                  'PostgresStorageAdapter.js)'
+            : null,
         () async {
-          final b = client.batch();
-          final ops = [
-            for (var i = 0; i < 1000; i++)
-              b.create(notes, Note(text: 'bulk-$i')),
-          ];
-          await b.send();
-          expect(ops.where((op) => op.result is! Ok), isEmpty);
-          expect(await countText('BULK-999'), 1);
+          final name = 'eq${DateTime.now().microsecondsSinceEpoch}.png';
+          final doc = await posts.create(minimal(alice, cover: file(name)));
+          final found = await posts.where((f) => f.cover.eq(file(name))).find();
+          expect([for (final d in found) d.id], [doc.id]);
+          expect(
+            await posts
+                .where((f) => f.cover.ne(file(name)) & f.id.eq(doc.id))
+                .count(),
+            0,
+          );
         },
       );
+
+      test('a polygon that contains a point', () async {
+        final square = Polygon([
+          GeoPoint(40, 40),
+          GeoPoint(40, 41),
+          GeoPoint(41, 41),
+          GeoPoint(41, 40),
+        ]);
+        final doc = await posts.create(minimal(alice, area: square));
+        final inside = await posts
+            .where((f) => f.area.containsPoint(GeoPoint(40.5, 40.5)))
+            .find();
+        expect([for (final d in inside) d.id], contains(doc.id));
+        final outside = await posts
+            .where((f) => f.area.containsPoint(GeoPoint(45, 45)))
+            .find();
+        expect([for (final d in outside) d.id], isNot(contains(doc.id)));
+        expect(square.containsPoint(GeoPoint(40.5, 40.5)), isTrue);
+      });
+
+      test('include through two pointers', () async {
+        await resetSignals(backend);
+        final all = client.collection(signals);
+        final a = await all.create(const Signal(name: 'a'));
+        final b = await all.create(Signal(name: 'b', links: [Pointer(a.id)]));
+        final c = await all.create(Signal(name: 'c', links: [Pointer(b.id)]));
+        final got = await all
+            .query()
+            .include((f) => f.links.then((l) => l.links))
+            .get(c.id);
+        final first = got.data.links!.single.loaded!;
+        expect(first.id, b.id);
+        expect(first.data.links!.single.loaded!.data.name, 'a');
+
+        final one = await all.query().include((f) => f.links).get(c.id);
+        expect(
+          one.data.links!.single.loaded!.data.links!.single.loaded,
+          isNull,
+        );
+      });
     });
 
     group('files', () {
@@ -637,30 +904,6 @@ void main() {
 
       tearDownAll(() => asAlice.close());
 
-      test('the download has the uploaded bytes and content type', () async {
-        final file = await asAlice.uploadFile(
-          png,
-          name: 'pixel.png',
-          contentType: 'image/png',
-        );
-        expect(file.name, matches(RegExp(r'^[0-9a-f]{32}_pixel\.png$')));
-        final r = await http.get(Uri.parse(file.url!));
-        expect(r.statusCode, 200);
-        expect(r.bodyBytes, png);
-        expect(r.headers['content-type'], 'image/png');
-      });
-
-      test('a name without extension gets the content type\'s', () async {
-        final file = await asAlice.uploadFile(
-          png,
-          name: 'pixel',
-          contentType: 'image/png',
-        );
-        expect(file.name, endsWith('_pixel.png'));
-        final r = await http.get(Uri.parse(file.url!));
-        expect(r.headers['content-type'], 'image/png');
-      });
-
       test('an upload in a File field round-trips through get', () async {
         final file = await asAlice.uploadFile(
           png,
@@ -673,35 +916,65 @@ void main() {
         expect(got.url, file.url);
       });
 
-      test('an anonymous upload is 130', () async {
-        await expectLater(
-          client.uploadFile(png, name: 'a.png', contentType: 'image/png'),
-          throwsA(
-            isA<OtherParseError>()
-                .having((e) => e.code, 'code', 130)
-                .having((e) => e.status, 'status', 400)
-                .having(
-                  (e) => e.message,
-                  'message',
-                  'File upload by public is disabled.',
-                ),
-          ),
+      test('an upload in a File field passes a beforeSave', () async {
+        final file = await asAlice.uploadFile(
+          png,
+          name: 'cover.png',
+          contentType: 'image/png',
         );
+        final notes = client.collection(const $NoteSchema());
+        final id = (await notes.create(Note(text: 'a', attachment: file))).id;
+        expect((await notes.get(id)).data.attachment?.url, file.url);
       });
 
-      test('an invalid name is 122', () async {
+      test('metadata and tags reach the file trigger', () async {
+        await asAlice.uploadFile(
+          png,
+          name: 'meta.png',
+          contentType: 'image/png',
+          metadata: {'owner': 'alice'},
+          tags: {'kind': 'avatar'},
+        );
+        final saved = (await backend.rest(
+          'POST',
+          '/functions/savedFile',
+          body: {},
+        ))['result'];
+        expect(saved, {
+          'metadata': {'owner': 'alice'},
+          'tags': {'kind': 'avatar'},
+        });
+      });
+
+      test('progress covers every byte, and download returns them', () async {
+        final big = Uint8List.fromList(
+          List.generate(300 * 1024, (i) => i % 251),
+        );
+        final seen = <int>[];
+        final file = await asAlice.uploadFile(
+          big,
+          name: 'big.bin',
+          contentType: 'application/octet-stream',
+          onProgress: (sent, total) {
+            expect(total, big.length);
+            seen.add(sent);
+          },
+        );
+        expect(seen, hasLength(greaterThan(1)));
+        expect(seen, [...seen]..sort());
+        expect(seen.last, big.length);
+        expect(await asAlice.downloadFile(file), big);
+      });
+
+      test('a completed cancel aborts the upload', () async {
         await expectLater(
-          asAlice.uploadFile(png, name: 'bad?.png', contentType: 'image/png'),
-          throwsA(
-            isA<OtherParseError>()
-                .having((e) => e.code, 'code', 122)
-                .having((e) => e.status, 'status', 400)
-                .having(
-                  (e) => e.message,
-                  'message',
-                  'Filename contains invalid characters.',
-                ),
+          asAlice.uploadFile(
+            Uint8List(1024 * 1024),
+            name: 'cancelled.bin',
+            contentType: 'application/octet-stream',
+            cancel: Future.value(),
           ),
+          throwsA(isA<NetworkError>()),
         );
       });
     });

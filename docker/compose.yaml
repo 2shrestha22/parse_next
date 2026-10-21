@@ -1,5 +1,5 @@
 x-parse: &parse
-  image: parseplatform/parse-server:9.10.5
+  image: parseplatform/parse-server:9.9.0
   volumes:
     - ../packages/parse_next_it/cloud:/parse-server/cloud:ro
   healthcheck:
@@ -22,6 +22,9 @@ x-parse: &parse
     # in UsersRouter.js).
     PARSE_SERVER_APP_NAME: parse-next-it
     PARSE_SERVER_EMAIL_ADAPTER: /parse-server/cloud/email.js
+    PARSE_SERVER_VERIFY_USER_EMAILS: "true"
+    PARSE_SERVER_ALLOW_CUSTOM_OBJECT_ID: "true"
+    PARSE_SERVER_EXPERIMENTAL_IDEMPOTENCY_OPTIONS: '{"paths":[".*"],"ttl":300}'
 
 services:
   mongo:

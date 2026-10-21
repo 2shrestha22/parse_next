@@ -14,8 +14,10 @@
         "write": true
       }
     },
+    "className": "_User",
     "createdAt": "2000-01-01T00:00:00.000Z",
     "email": "carol@example.test",
+    "emailVerified": false,
     "objectId": "obj0000007",
     "sessionToken": "r:session0004",
     "updatedAt": "2000-01-01T00:00:00.000Z",

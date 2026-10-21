@@ -56,32 +56,16 @@ void main() {
   forEachBackend((backend) {
     setUpAll(() => resetSignals(backend));
 
+    // Only conditions live() rewrites: the rest match in the server's
+    // QueryTools.js as they are sent, which tests the server, not this SDK.
     for (final (label, Cond<Signal> Function(SignalFields) cond) in [
       ('gt', (f) => f.points.gt(10)),
       ('gte', (f) => f.points.gte(10)),
       ('lt', (f) => f.points.lt(10)),
       ('lte', (f) => f.points.lte(10)),
-      ('eq', (f) => f.points.eq(20)),
-      ('ne', (f) => f.points.ne(20)),
-      ('oneOf', (f) => f.points.oneOf([1, 20])),
-      ('noneOf', (f) => f.points.noneOf([1, 20])),
-      ('exists', (f) => f.points.exists()),
-      ('exists false', (f) => f.points.exists(false)),
-      ('startsWith und', (f) => f.label.startsWith('und')),
-      ('startsWith a', (f) => f.label.startsWith('a')),
-      ('matches i', (f) => f.label.matches('^a', caseInsensitive: true)),
-      ('contains', (f) => f.tags.contains('x')),
-      ('containsAll', (f) => f.tags.containsAll(['x', 'y'])),
-      ('containsAny', (f) => f.tags.containsAny(['y', 'z'])),
-      (
-        'containsAny on pointers',
-        (f) => f.links.containsAny(const [Pointer('s1'), Pointer('s3')]),
-      ),
       ('date gt', (f) => f.at.gt(d1)),
       ('date lt', (f) => f.at.lt(d3)),
-      ('date eq', (f) => f.at.eq(d1)),
-      ('near', (f) => f.place.near(GeoPoint(10, 10), maxKm: 1500)),
-      ('withinBox', (f) => f.place.withinBox(GeoPoint(0, 0), GeoPoint(18, 18))),
+      ('startsWith und', (f) => f.label.startsWith('und')),
       (
         'withinPolygon',
         (f) => f.place.withinPolygon(
@@ -93,14 +77,18 @@ void main() {
           ]),
         ),
       ),
+      ('containedBy', (f) => f.tags.exists() & f.tags.containedBy(['x'])),
       ('or', (f) => f.points.gt(10) | f.label.eq('apple')),
+      ('nor', (f) => ~f.points.gt(10)),
+      ('nor of a regex', (f) => ~f.label.startsWith('a')),
+      ('an empty oneOf in or', (f) => f.points.oneOf([]) | f.points.gt(10)),
     ]) {
       test(
         'live $label matches what find returns',
         skip: switch (label) {
-          'noneOf' when backend.isPostgres =>
-            r'$nin never matches an absent field on Postgres; live matching '
-                'follows Mongo',
+          'nor' || 'nor of a regex' when backend.isPostgres =>
+            r'NOT never matches an absent field on Postgres, as with $nin; '
+                'live matching follows Mongo',
           _ => null,
         },
         () async {
