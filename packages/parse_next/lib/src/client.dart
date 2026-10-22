@@ -416,7 +416,7 @@ Future<T> _request<T extends Object>(
     }
     req.persistentConnection = persistent;
     req.headers['X-Parse-Application-Id'] = client.appId;
-    // Not `parse-next0.2.0`: the server parses letters followed by digits as
+    // Not `parse-next0.3.0`: the server parses letters followed by digits as
     // an SDK it knows, and for an unknown one leaves out the `Delete` of a
     // field a trigger unset (`supportsForwardDelete` in ClientSDK.js).
     req.headers['X-Parse-Client-Version'] = 'parse-next/$_packageVersion';
@@ -471,7 +471,7 @@ typedef _Raw = ({
 
 /// Sent as `X-Parse-Client-Version`; kept equal to the pubspec version by a
 /// test.
-const _packageVersion = '0.2.0';
+const _packageVersion = '0.3.0';
 
 const _cancelled = 'cancelled';
 
