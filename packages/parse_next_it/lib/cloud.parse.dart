@@ -123,6 +123,35 @@ final class _$Cloud implements Cloud {
       )).require<Uint8List>('result');
 
   @override
+  Future<List<DateTime>> echoDates({required List<DateTime> value}) async =>
+      (await _client.callFunction(
+        'echoDates',
+        Json({'value': value.map((e) => encodeDate(e)).toList()}),
+      )).requireList<DateTime>('result');
+
+  @override
+  Future<List<GeoPoint>> echoGeoPoints({required List<GeoPoint> value}) async =>
+      (await _client.callFunction(
+        'echoGeoPoints',
+        Json({'value': value.map((e) => e.toJson()).toList()}),
+      )).requireList<GeoPoint>('result');
+
+  @override
+  Future<List<ParseFile>> echoFiles({required List<ParseFile> value}) async =>
+      (await _client.callFunction(
+        'echoFiles',
+        Json({'value': value.map((e) => e.toJson()).toList()}),
+      )).requireList<ParseFile>('result');
+
+  @override
+  Future<List<Map<String, Object?>>> echoMaps({
+    required List<Map<String, Object?>> value,
+  }) async => (await _client.callFunction(
+    'echoMaps',
+    Json({'value': value.map((e) => encodeValue(e)).toList()}),
+  )).requireMapList('result');
+
+  @override
   Future<String?> echoNullableString({String? value}) async =>
       (await _client.callFunction(
         'echoNullableString',
@@ -238,6 +267,16 @@ final class _$Cloud implements Cloud {
         'echoNullableBytes',
         Json({if (value != null) 'value': encodeBytes(value)}),
       )).opt<Uint8List>('result');
+
+  @override
+  Future<List<Map<String, Object?>>?> echoNullableMaps({
+    List<Map<String, Object?>>? value,
+  }) async => (await _client.callFunction(
+    'echoNullableMaps',
+    Json({
+      if (value != null) 'value': value.map((e) => encodeValue(e)).toList(),
+    }),
+  )).optMapList('result');
 
   @override
   Future<List<String>> paramKeys({

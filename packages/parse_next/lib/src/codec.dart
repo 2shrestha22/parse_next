@@ -36,6 +36,13 @@ extension type const Json(Map<String, Object?> _map)
         final m => _within(key, () => _decodeMap(m)),
       };
 
+  /// A list of `Map<String, Object?>`, each decoded as [requireMap] does.
+  List<Map<String, Object?>> requireMapList(String key) =>
+      optMapList(key) ?? (throw DecodeError(key, 'missing'));
+
+  List<Map<String, Object?>>? optMapList(String key) =>
+      _list(key, (k, v) => _decodeMap(_as<Map<String, Object?>>(k, v), k));
+
   List<T> requireList<T extends Object>(String key) =>
       optList<T>(key) ?? (throw DecodeError(key, 'missing'));
 

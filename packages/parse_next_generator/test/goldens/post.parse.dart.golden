@@ -42,6 +42,12 @@ final class PostFields extends Fields<Post> {
   PolygonField<Post> get zone => const PolygonField('zone');
   ExistsField<Post> get thumbnail => const ExistsField('thumb');
   ExistsField<Post> get data => const ExistsField('data');
+  ListField<Post, Map<String, Object?>> get buckets =>
+      ListField('buckets', (v) => encodeValue(v));
+  ListField<Post, DateTime> get dates =>
+      ListField('dates', (v) => encodeDate(v));
+  ListField<Post, GeoPoint> get spots => ListField('spots', (v) => v.toJson());
+  ListField<Post, ParseFile> get files => ListField('files', (v) => v.toJson());
 }
 
 final class PostOps {
@@ -86,6 +92,14 @@ final class PostOps {
   SetOps<Uint8List> get thumbnail => const SetOps('thumb', encodeBytes);
   NullableSetOps<Uint8List> get data =>
       const NullableSetOps('data', encodeBytes);
+  ListOps<Map<String, Object?>> get buckets =>
+      ListOps('buckets', (v) => encodeValue(v));
+  NullableListOps<DateTime> get dates =>
+      NullableListOps('dates', (v) => encodeDate(v));
+  NullableListOps<GeoPoint> get spots =>
+      NullableListOps('spots', (v) => v.toJson());
+  NullableListOps<ParseFile> get files =>
+      NullableListOps('files', (v) => v.toJson());
 }
 
 final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
@@ -126,6 +140,10 @@ final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
     zone: json.opt<Polygon>('zone'),
     thumbnail: json.require<Uint8List>('thumb'),
     data: json.opt<Uint8List>('data'),
+    buckets: json.requireMapList('buckets'),
+    dates: json.optList<DateTime>('dates'),
+    spots: json.optList<GeoPoint>('spots'),
+    files: json.optList<ParseFile>('files'),
   );
 
   @override
@@ -163,6 +181,16 @@ final class $PostSchema implements ParseSchema<Post, PostFields, PostOps> {
     'zone': value.zone?.toJson(),
     'thumb': encodeBytes(value.thumbnail),
     'data': value.data == null ? null : encodeBytes(value.data!),
+    'buckets': [for (final e in value.buckets) encodeValue(e)],
+    'dates': value.dates == null
+        ? null
+        : [for (final e in value.dates!) encodeDate(e)],
+    'spots': value.spots == null
+        ? null
+        : [for (final e in value.spots!) e.toJson()],
+    'files': value.files == null
+        ? null
+        : [for (final e in value.files!) e.toJson()],
   });
 
   @override

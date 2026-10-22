@@ -12,7 +12,7 @@ Parse.Cloud.define('sentMail', () => require('./email.js').sent);
 for (const type of [
   'String', 'Int', 'Double', 'Num', 'Bool', 'Date', 'Enum', 'Strings',
   'Ints', 'Map', 'Pointer', 'Pointers', 'File', 'GeoPoint', 'Polygon',
-  'Bytes',
+  'Bytes', 'Dates', 'GeoPoints', 'Files', 'Maps',
 ]) {
   const echo = request => request.params.value;
   Parse.Cloud.define(`echo${type}`, echo);

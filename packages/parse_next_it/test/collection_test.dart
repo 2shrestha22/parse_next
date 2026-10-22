@@ -69,6 +69,16 @@ Post full(Pointer<User> a, Pointer<User> b) => Post(
   zone: Polygon([GeoPoint(2, 2), GeoPoint(2, 3), GeoPoint(3, 3)]),
   thumbnail: Uint8List.fromList([0, 1, 2, 255]),
   data: Uint8List.fromList([9]),
+  buckets: [
+    {'date': '2026-10-20', 'count': 4},
+    {
+      'at': DateTime.utc(2026, 10, 21),
+      'nested': {'file': file('n.txt')},
+    },
+  ],
+  dates: [DateTime.utc(2024, 1, 2, 3, 4, 5, 678), DateTime.utc(2020)],
+  spots: [GeoPoint(1, 2), GeoPoint(-3, 4)],
+  files: [file('a.txt'), file('b.txt')],
 );
 
 Post minimal(
@@ -124,7 +134,16 @@ void main() {
           k: type('Number'),
         for (final k in ['published', 'pinned']) k: type('Boolean'),
         for (final k in ['published_at', 'editedAt']) k: type('Date'),
-        for (final k in ['tags', 'ranks', 'coauthors', 'reviewers'])
+        for (final k in [
+          'tags',
+          'ranks',
+          'coauthors',
+          'reviewers',
+          'buckets',
+          'dates',
+          'spots',
+          'files',
+        ])
           k: type('Array'),
         for (final k in ['meta', 'extra']) k: type('Object'),
         'author': user,
@@ -250,6 +269,59 @@ void main() {
         expect(got.ranks, sameItems([1, 2, 3, 4]));
       });
 
+      test('lists of maps, dates, GeoPoints and files', () async {
+        final x = full(alice, bob);
+        final id = (await posts.create(x)).id;
+        final bucket = {'date': '2026-10-22', 'count': 1};
+        final day = DateTime.utc(2025);
+        await posts.update(
+          id,
+          (o) => [
+            o.buckets.addUnique([bucket, x.buckets.first]),
+            o.dates.add([day]),
+            o.spots.remove([GeoPoint(1, 2)]),
+            o.files.remove([file('a.txt')]),
+          ],
+        );
+        final got = (await posts.get(id)).data;
+        expect(got.buckets, sameItems([...x.buckets, bucket]));
+        expect(got.dates, [...x.dates!, day]);
+        expect(got.spots, [GeoPoint(-3, 4)]);
+        expect(got.files, [file('b.txt')]);
+
+        Future<bool> finds(Cond<Post> Function(PostFields f) c) async =>
+            await posts.where((f) => f.id.eq(id) & c(f)).count() == 1;
+        expect(await finds((f) => f.buckets.contains(bucket)), isTrue);
+        expect(
+          await finds((f) => f.buckets.contains({...bucket, 'count': 2})),
+          isFalse,
+        );
+        expect(await finds((f) => f.dates.contains(day)), isTrue);
+        expect(
+          await finds((f) => f.dates.containsAny([DateTime.utc(2019)])),
+          isFalse,
+        );
+        expect(await finds((f) => f.spots.contains(GeoPoint(-3, 4))), isTrue);
+        expect(await finds((f) => f.files.contains(file('b.txt'))), isTrue);
+
+        // The quirks the README lists: a file in a list matches by URL too,
+        // and on Mongo a map matches only with its keys in the same order.
+        expect(
+          await finds(
+            (f) => f.files.contains(
+              const ParseFile(name: 'b.txt', url: 'http://elsewhere/b.txt'),
+            ),
+          ),
+          isFalse,
+        );
+        expect(
+          await finds(
+            (f) => f.buckets.contains({'count': 1, 'date': '2026-10-22'}),
+          ),
+          backend.isPostgres,
+        );
+      });
+
       test('unset makes every nullable field absent', () async {
         final id = (await posts.create(full(alice, bob))).id;
         await posts.update(
@@ -269,6 +341,9 @@ void main() {
             o.attachment.unset(),
             o.zone.unset(),
             o.data.unset(),
+            o.dates.unset(),
+            o.spots.unset(),
+            o.files.unset(),
           ],
         );
         final stored = await raw(id);
@@ -315,6 +390,10 @@ void main() {
             o.location.set(x.location),
             o.area.set(x.area),
             o.zone.set(x.zone!),
+            o.buckets.set(x.buckets),
+            o.dates.set(x.dates!),
+            o.spots.set(x.spots!),
+            o.files.set(x.files!),
           ],
         );
         expect(wire((await posts.get(id)).data), {
@@ -1001,6 +1080,9 @@ const nullableKeys = [
   'attachment',
   'zone',
   'data',
+  'dates',
+  'spots',
+  'files',
 ];
 
 Post minimalOf(Post p) => Post(
@@ -1019,4 +1101,5 @@ Post minimalOf(Post p) => Post(
   location: p.location,
   area: p.area,
   thumbnail: p.thumbnail,
+  buckets: p.buckets,
 );

@@ -65,6 +65,15 @@ void main() {
       expect(await cloud.echoGeoPoint(value: spot), spot);
       expect(await cloud.echoPolygon(value: area), area);
       expect(await cloud.echoBytes(value: bytes), bytes);
+      expect(await cloud.echoDates(value: [at, at]), [at, at]);
+      expect(await cloud.echoGeoPoints(value: [spot]), [spot]);
+      const file = ParseFile(name: 'a.txt', url: 'http://files.test/a.txt');
+      expect(await cloud.echoFiles(value: [file]), [file]);
+      final maps = [
+        map,
+        {'at': at},
+      ];
+      expect(await cloud.echoMaps(value: maps), maps);
     });
 
     test('a map keeps dates, points and files at any depth', () async {
@@ -118,6 +127,7 @@ void main() {
       expect(await cloud.echoNullableGeoPoint(value: spot), spot);
       expect(await cloud.echoNullablePolygon(value: area), area);
       expect(await cloud.echoNullableBytes(value: bytes), bytes);
+      expect(await cloud.echoNullableMaps(value: [map]), [map]);
     });
 
     test(
@@ -144,6 +154,7 @@ void main() {
           cloud.echoNullableGeoPoint(),
           cloud.echoNullablePolygon(),
           cloud.echoNullableBytes(),
+          cloud.echoNullableMaps(),
         ]);
         expect(results, everyElement(isNull));
       },

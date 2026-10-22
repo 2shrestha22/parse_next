@@ -30,6 +30,12 @@ abstract class Cloud {
   Future<GeoPoint> echoGeoPoint({required GeoPoint value});
   Future<Polygon> echoPolygon({required Polygon value});
   Future<Uint8List> echoBytes({required Uint8List value});
+  Future<List<DateTime>> echoDates({required List<DateTime> value});
+  Future<List<GeoPoint>> echoGeoPoints({required List<GeoPoint> value});
+  Future<List<ParseFile>> echoFiles({required List<ParseFile> value});
+  Future<List<Map<String, Object?>>> echoMaps({
+    required List<Map<String, Object?>> value,
+  });
 
   Future<String?> echoNullableString({String? value});
   Future<int?> echoNullableInt({int? value});
@@ -49,6 +55,9 @@ abstract class Cloud {
   Future<GeoPoint?> echoNullableGeoPoint({GeoPoint? value});
   Future<Polygon?> echoNullablePolygon({Polygon? value});
   Future<Uint8List?> echoNullableBytes({Uint8List? value});
+  Future<List<Map<String, Object?>>?> echoNullableMaps({
+    List<Map<String, Object?>>? value,
+  });
 
   /// The keys of the params object cloud code received.
   Future<List<String>> paramKeys({String? a, required int b, DateTime? c});

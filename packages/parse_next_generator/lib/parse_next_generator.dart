@@ -42,7 +42,8 @@ const _uint8List = TypeChecker.fromUrl('dart:typed_data#Uint8List');
 
 const _supported =
     'String, int, double, num, bool, DateTime, an enum, a List of String, '
-    'int, double, num or bool, Map<String, Object?>, Pointer<T>, '
+    'int, double, num, bool, DateTime, GeoPoint, ParseFile or '
+    'Map<String, Object?>, Map<String, Object?>, Pointer<T>, '
     'List<Pointer<T>>, Relation<T>, ParseFile, GeoPoint, Polygon or '
     'Uint8List, or a nullable one of these except Relation';
 
@@ -236,10 +237,7 @@ _Field _field(String model, FormalParameterElement p, String key) {
           : '$k: encodeBytes($value),',
     );
   }
-  if (type.isDartCoreMap &&
-      _element(args[0]) == 'String' &&
-      args[1].isDartCoreObject &&
-      args[1].nullabilitySuffix == NullabilitySuffix.question) {
+  if (_isJsonMap(type)) {
     return (
       fields: 'MapField<$model> get $name => const MapField($k);',
       ops: '${n}MapOps get $name => const ${n}MapOps($k);',
@@ -294,6 +292,18 @@ _Field _field(String model, FormalParameterElement p, String key) {
         encode: '$k: $value,',
       );
     }
+    if (_listOf(e) case final l?) {
+      final each = '(v) => ${l.encode('v')}';
+      return (
+        fields:
+            'ListField<$model, ${l.type}> get $name => ListField($k, $each);',
+        ops: '${n}ListOps<${l.type}> get $name => ${n}ListOps($k, $each);',
+        decode: 'json.${l.decode(read, k)}',
+        encode: nullable
+            ? '$k: $value == null ? null : [for (final e in $value!) ${l.encode('e')}],'
+            : '$k: [for (final e in $value) ${l.encode('e')}],',
+      );
+    }
     if (e is InterfaceType &&
         _pointer.isExactlyType(e) &&
         e.nullabilitySuffix == NullabilitySuffix.none) {
@@ -316,6 +326,47 @@ _Field _field(String model, FormalParameterElement p, String key) {
   unsupported();
 }
 
+typedef _ListOf = ({
+  String type,
+  String Function(String e) encode,
+  String Function(String read, String key) decode,
+});
+
+/// A List element that is encoded one by one: DateTime, GeoPoint, ParseFile
+/// or `Map<String, Object?>`.
+_ListOf? _listOf(DartType e) {
+  if (e is! InterfaceType || e.nullabilitySuffix != NullabilitySuffix.none) {
+    return null;
+  }
+  _ListOf typed(String t, String Function(String e) encode) =>
+      (type: t, encode: encode, decode: (read, k) => '${read}List<$t>($k)');
+  if (_dateTime.isExactlyType(e)) {
+    return typed('DateTime', (e) => 'encodeDate($e)');
+  }
+  for (final (checker, t) in [
+    (_geoPoint, 'GeoPoint'),
+    (_parseFile, 'ParseFile'),
+  ]) {
+    if (checker.isExactlyType(e)) return typed(t, (e) => '$e.toJson()');
+  }
+  if (_isJsonMap(e)) {
+    return (
+      type: 'Map<String, Object?>',
+      encode: (e) => 'encodeValue($e)',
+      decode: (read, k) => '${read}MapList($k)',
+    );
+  }
+  return null;
+}
+
+bool _isJsonMap(DartType t) {
+  if (t is! InterfaceType || !t.isDartCoreMap) return false;
+  final [key, value] = t.typeArguments;
+  return _element(key) == 'String' &&
+      value.isDartCoreObject &&
+      value.nullabilitySuffix == NullabilitySuffix.question;
+}
+
 String? _element(DartType t) =>
     t.nullabilitySuffix == NullabilitySuffix.none ? _primitive(t) : null;
 
@@ -330,7 +381,8 @@ String? _primitive(DartType t) {
 
 const _values =
     'String, int, double, num, bool, DateTime, an enum, a List of String, '
-    'int, double, num or bool, Map<String, Object?>, Pointer<T>, '
+    'int, double, num, bool, DateTime, GeoPoint, ParseFile or '
+    'Map<String, Object?>, Map<String, Object?>, Pointer<T>, '
     'List<Pointer<T>>, ParseFile, GeoPoint, Polygon, Uint8List';
 
 String _functions(Element element) {
@@ -495,10 +547,7 @@ _Wire _wire(DartType type, Element at, {required bool docs}) {
   if (_uint8List.isExactlyType(type)) {
     return typed('Uint8List', (v) => 'encodeBytes($v)');
   }
-  if (type.isDartCoreMap &&
-      _element(args[0]) == 'String' &&
-      args[1].isDartCoreObject &&
-      args[1].nullabilitySuffix == NullabilitySuffix.question) {
+  if (_isJsonMap(type)) {
     return (
       encode: (v) => 'encodeValue($v)',
       decode: (read, k) => '${read}Map($k)',
@@ -529,6 +578,12 @@ _Wire _wire(DartType type, Element at, {required bool docs}) {
     final e = args[0];
     if (_element(e) case final t?) {
       return (encode: (v) => v, decode: (read, k) => '${read}List<$t>($k)');
+    }
+    if (_listOf(e) case final l?) {
+      return (
+        encode: (v) => '$v.map((e) => ${l.encode('e')}).toList()',
+        decode: l.decode,
+      );
     }
     if (e is InterfaceType && e.nullabilitySuffix == NullabilitySuffix.none) {
       if (_pointer.isExactlyType(e)) {

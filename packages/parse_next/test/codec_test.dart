@@ -286,6 +286,27 @@ void main() {
       expect(back['nested'], {'f': file, 'p': polygon, 'b': true});
     });
 
+    test('a list of maps decodes each one', () {
+      final json = Json(
+        jsonDecode(
+              jsonEncode({
+                'ms': [wire, wire],
+              }),
+            )
+            as Map<String, Object?>,
+      );
+      expect(json.requireMapList('ms'), [
+        for (var i = 0; i < 2; i++) decodeValue(jsonDecode(jsonEncode(wire))),
+      ]);
+      expect(json.requireMapList('ms').first['d'], date);
+      expect(
+        () => Json({
+          'ms': [wire, 3],
+        }).requireMapList('ms'),
+        throwsA(isA<DecodeError>().having((e) => e.key, 'key', 'ms[1]')),
+      );
+    });
+
     test('a Pointer or Bytes from the server stays a map', () {
       const pointer = {'__type': 'Pointer', 'className': 'X', 'objectId': 'x'};
       expect(decodeValue({'p': pointer}), {'p': pointer});

@@ -41,6 +41,10 @@ final class Post {
     this.zone,
     @ParseKey('thumb') required this.thumbnail,
     this.data,
+    this.buckets = const [],
+    this.dates,
+    this.spots,
+    this.files,
   });
 
   final String title;
@@ -76,4 +80,8 @@ final class Post {
   final Polygon? zone;
   final Uint8List thumbnail;
   final Uint8List? data;
+  final List<Map<String, Object?>> buckets;
+  final List<DateTime>? dates;
+  final List<GeoPoint>? spots;
+  final List<ParseFile>? files;
 }

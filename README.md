@@ -44,10 +44,11 @@ The master key is for Dart code that runs on a server; an app must not hold it.
 ### Data types
 - [x] String, Number (`int`, `double`, `num`), Boolean, Date, enum (stored by name)
 - [x] Array of String, Number or Boolean, and of Pointers
+- [x] Array of Dates, GeoPoints, Files or Objects — `List<DateTime>`, `List<GeoPoint>`, `List<ParseFile>`, `List<Map<String, Object?>>`. In a list, a file is matched by its URL too, and on Mongo an object matches only with its keys in the same order
 - [x] Object — `Map<String, Object?>`, holding `DateTime`, `GeoPoint`, `Polygon` and `ParseFile` at any depth
 - [x] Pointer, Relation, File, GeoPoint, Polygon, Bytes (`Uint8List`)
 - [x] Null and absent — a nullable field
-- [ ] An Array of Dates, GeoPoints, Files or Objects as a typed field — use a `Map` field or a pointer list
+- [ ] An Array of embedded typed classes, such as `List<Bucket>` — use `List<Map<String, Object?>>`
 
 ### Queries
 - [x] Find, first, count, find and count in one request — `find`, `first`, `count`, `findAndCount`

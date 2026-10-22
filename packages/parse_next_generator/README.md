@@ -37,7 +37,7 @@ For each `@ParseClass` the generator writes `PostFields` (typed query fields), `
 
 - It reads the named parameters of the unnamed constructor, generative or factory, and the getters of the same names. Positional parameters are a build error. freezed models work.
 - The wire key is the parameter name, or the `@ParseKey` value, which must be unique within the class.
-- A field is `String`, `int`, `double`, `num`, `bool`, `DateTime`, an enum (stored by name), a `List` of `String`, `int`, `double`, `num` or `bool`, `Map<String, Object?>`, `Pointer<T>`, `List<Pointer<T>>`, `Relation<T>`, `ParseFile`, `GeoPoint`, `Polygon` or `Uint8List`, or a nullable one of these. `T` must be a `@ParseClass`.
+- A field is `String`, `int`, `double`, `num`, `bool`, `DateTime`, an enum (stored by name), a `List` of `String`, `int`, `double`, `num`, `bool`, `DateTime`, `GeoPoint`, `ParseFile` or `Map<String, Object?>`, `Map<String, Object?>`, `Pointer<T>`, `List<Pointer<T>>`, `Relation<T>`, `ParseFile`, `GeoPoint`, `Polygon` or `Uint8List`, or a nullable one of these. `T` must be a `@ParseClass`.
 - A `Relation` is non-nullable with the default `const Relation()`: it is never sent or read as a value, only queried and changed through ops.
 - A class has at most one `GeoPoint` field, as the server allows.
 - Ops follow the type: `unset` exists only on nullable fields, `increment` only on numbers, `add`, `addUnique` and `remove` only on lists.
