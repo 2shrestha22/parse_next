@@ -38,8 +38,8 @@ final class Schema {
   );
 
   /// A null in [fields] or [indexes] deletes that field, with its values in
-  /// every object, or that index. A field cannot change type: delete it and
-  /// add it in a second call. [classLevelPermissions] replaces the class's.
+  /// every object, or that index. A field cannot change type.
+  /// [classLevelPermissions] replaces the class's.
   Future<Json> update({
     Map<String, Map<String, Object?>?> fields = const {},
     Map<String, Map<String, Object?>?> indexes = const {},
@@ -56,7 +56,7 @@ final class Schema {
     }),
   );
 
-  /// Fails with 255 while the class has objects: [purge] it first.
+  /// Fails with 255 while the class has objects.
   Future<void> delete() async {
     await request(_client, 'DELETE', _path);
   }

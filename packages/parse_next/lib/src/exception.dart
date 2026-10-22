@@ -22,8 +22,8 @@ final class DecodeError extends ParseException {
       'DecodeError: ${id == null ? '' : '$id: '}$key: $message';
 }
 
-/// The object does not exist, or the ACL hides it from this caller: the
-/// server answers both with 101.
+/// The object does not exist, or its ACL hides it from this caller; both
+/// are 101.
 final class ObjectNotFound extends ParseException {
   const ObjectNotFound(this.message, {required this.status});
 
@@ -77,8 +77,8 @@ final class InvalidSession extends ParseException {
 }
 
 /// `/login` found no user with that username and password, or the provider
-/// rejected the `authData` given to `Auth.logInWith`. The server answers
-/// both with 101, which elsewhere is [ObjectNotFound].
+/// rejected the `authData` given to `Auth.logInWith`; both are 101, which
+/// elsewhere is [ObjectNotFound].
 final class InvalidCredentials extends ParseException {
   const InvalidCredentials(this.message, {required this.status});
 
@@ -131,13 +131,10 @@ final class Unauthorized extends ParseException {
 /// No response arrived: the connection failed or the timeout elapsed.
 ///
 /// The request may still have reached the server, so a write may have been
-/// applied. The SDK never retries; decide yourself whether repeating the
-/// call is safe.
+/// applied.
 ///
-/// Also raised for the call right after a 500 `Internal server error.`:
-/// parse-server destroys that keep-alive socket after responding
-/// (`handleParseErrors` in middlewares.js), so the next request on it fails
-/// before reaching the server.
+/// Also thrown for the request after a 500 `Internal server error.` on the
+/// same connection, which the server closes.
 final class NetworkError extends ParseException {
   const NetworkError(this.message);
 

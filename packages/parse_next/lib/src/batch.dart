@@ -3,10 +3,8 @@ part of 'client.dart';
 /// Writes sent together through `POST /batch`, from [ParseClient.batch].
 ///
 /// A server with `requestComplexity.batchRequestLimit` rejects a longer
-/// batch as a whole with 107, unless it is sent with the master key
-/// (`handleBatch` in batch.js); parse-server announces 100 as the coming
-/// default. The JSON body is capped by the server's `maxUploadSize`, 20 MB
-/// by default.
+/// request with 107 unless it is sent with the master key. The request body
+/// is capped by the server's `maxUploadSize`, 20 MB by default.
 final class Batch {
   Batch._(this._client);
 
@@ -70,18 +68,15 @@ final class Batch {
   }
 
   /// Fills every [BatchOp.result]. Without [transaction], the items go 20 to
-  /// a request, one request after another, as the JS SDK sends them; a
-  /// failure of a request as a whole, such as [NetworkError], is thrown here
-  /// and leaves the results of its items and the later ones unset.
+  /// a request, one request after another; a failure of a whole request,
+  /// such as [NetworkError], is thrown and leaves the results of its items
+  /// and the later ones unset.
   ///
   /// [context] reaches every item's triggers as `request.context`.
   ///
-  /// With [transaction], one failing item rolls back every item, and the
-  /// server answers with 500 `Internal server error.` without the item
-  /// results (`handleBatch` in batch.js), so this throws [OtherParseError]
-  /// with code 1. The server destroys the socket after that response (see
-  /// [NetworkError]), so a transactional batch asks for its connection to be
-  /// closed and the next call opens a fresh one.
+  /// With [transaction], the items go in one request and one failing item
+  /// rolls back every item; this then throws [OtherParseError] with code 1
+  /// and sets no result.
   Future<void> send({
     bool transaction = false,
     Map<String, Object?>? context,
@@ -109,6 +104,8 @@ final class Batch {
           ],
           if (transaction) 'transaction': true,
         }),
+        // The server destroys the socket after a failed transaction's
+        // response, so that connection is not reused.
         persistent: !transaction,
         context: context,
       );
@@ -160,8 +157,7 @@ final class BatchOp<R> {
   Result<R>? _result;
 
   /// An [Err] holds the exception the same call outside a batch would
-  /// throw, with the HTTP status the server gives that code on its own
-  /// (`handleParseErrors` in middlewares.js), or a [DecodeError].
+  /// throw, or a [DecodeError].
   Result<R> get result =>
       _result ?? (throw StateError('The batch has not been sent.'));
 

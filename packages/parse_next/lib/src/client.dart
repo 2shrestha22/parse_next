@@ -19,15 +19,13 @@ part 'schema.dart';
 final class ParseClient {
   /// [server] is the mount point, such as `https://example.com/parse`.
   ///
-  /// An [httpClient] passed here stays owned by the caller, and [close] leaves
-  /// it open. Without one, [ParseClient] creates its own and [close] closes it.
+  /// [close] closes [httpClient] only when this client created it.
   ///
-  /// [sessions] is read once, on the first request or [Auth] call, not here;
-  /// a value written to it by anything but this client after that is not
-  /// seen. Every request then carries the session token while one exists.
-  /// Without a store, the session lasts as long as this client. When a write
-  /// to [sessions] fails, the error reaches the caller but this client keeps
-  /// the new session in memory.
+  /// [sessions] is read once, on the first request or [Auth] call; values
+  /// written to it afterwards by anything else are not seen. Every request
+  /// carries the session token while one exists. Without a store, the
+  /// session lasts as long as this client. When a write to [sessions] fails,
+  /// the error is thrown and the new session is kept in memory.
   ParseClient({
     required this.server,
     required this.appId,
@@ -53,44 +51,37 @@ final class ParseClient {
   /// Sent as `X-Parse-Client-Key` when set.
   final String? clientKey;
 
-  /// For code that runs on a server; never put it in an app. Sent as
-  /// `X-Parse-Master-Key` on every request, which then bypasses ACLs and
-  /// class-level permissions and acts as no user: the server ignores the
-  /// session token. For requests as a user, use a second client without it.
+  /// Sent as `X-Parse-Master-Key` on every request and on the live query
+  /// connection. Requests then bypass ACLs and class-level permissions and
+  /// act as no user; the session token is ignored. Not for code that ships
+  /// in an app. Also takes a `readOnlyMasterKey`.
   ///
-  /// The server takes it only from an address in its `masterKeyIps`,
-  /// localhost by default, and answers anyone else with [Unauthorized]. A
-  /// LiveQuery server honours it only when its `keyPairs` list `masterKey`.
-  /// A `readOnlyMasterKey` goes here too.
+  /// The server accepts it only from addresses in its `masterKeyIps`,
+  /// localhost by default, and answers others with [Unauthorized]. A
+  /// LiveQuery server accepts it only when its `keyPairs` list `masterKey`.
   final String? masterKey;
 
-  /// One per install of the app, kept across runs; the JS SDK uses a random
-  /// UUID. Without it every login adds a session, because the server replaces
-  /// a user's earlier session only for the same installation
-  /// (`destroyDuplicatedSessions` in RestWrite.js). Sent as
-  /// `X-Parse-Installation-Id`: in a browser every request fails its CORS
-  /// preflight unless the server's `allowHeaders` lists it.
+  /// Sent as `X-Parse-Installation-Id`. One per install, kept across runs;
+  /// without it every login adds a session. In a browser, requests fail
+  /// unless the server's `allowHeaders` lists the header.
   final String? installationId;
 
-  /// Covers the whole request, from sending to the last byte of the body;
-  /// each retry gets its own.
+  /// Per attempt, from sending to the last byte of the body.
   final Duration timeout;
 
-  /// How many times a read is tried: with more than 1, a query, `get`,
-  /// `me` and the like are retried after a [NetworkError] or a 502, 503 or
-  /// 504, with the JS SDK's backoff; the JS SDK tries 5 times. A write is
-  /// retried only with [idempotency].
+  /// How many times a read is tried. With more than 1, a read is retried
+  /// after a [NetworkError] or a 502, 503 or 504, with a random exponential
+  /// backoff. A write is retried only with [idempotency].
   final int attempts;
 
-  /// Sends every create and update with an `X-Parse-Request-Id` that its
-  /// retries repeat, and retries it like a read. A server with
-  /// `idempotencyOptions` covering the route then applies it once and
-  /// answers a repeat with 159 `Duplicate request`; without that option a
-  /// retried write can apply twice.
+  /// Sends each create and update with an `X-Parse-Request-Id`, repeated on
+  /// its retries, and retries it like a read. A server whose
+  /// `idempotencyOptions` cover the route applies it once and answers a
+  /// repeat with 159; without that option a retried write can apply twice.
   final bool idempotency;
 
-  /// Where [Query.live] connects: [server] with `ws` or `wss` unless set,
-  /// for a LiveQuery server on another host.
+  /// Where [Query.live] connects. Defaults to [server] with the scheme `ws`
+  /// or `wss`.
   final Uri liveQueryServer;
 
   final http.Client _http;
@@ -109,22 +100,19 @@ final class ParseClient {
   Auth<U> auth<U>(ParseSchema<U, Object?, Object?> schema) =>
       Auth._(this, schema);
 
-  /// The call behind a `@ParseFunctions` method. The response holds the
-  /// function's return value under `result`, absent when it returned
-  /// `undefined`.
+  /// Calls the cloud function [name]. The response holds its return value
+  /// under `result`, absent when it returned `undefined`.
   Future<Json> callFunction(String name, Json params) =>
       request(this, 'POST', '/functions/$name', body: params);
 
-  /// The `params` of `GET /config`. Without [masterKey], params the server
-  /// marks `masterKeyOnly` are left out of the response (`getGlobalConfig`
-  /// in GlobalConfigRouter.js).
+  /// The config params. Without [masterKey], params marked `masterKeyOnly`
+  /// are left out.
   Future<Json> config() async =>
       (await request(this, 'GET', '/config')).require<Json>('params');
 
-  /// Merges [params] into the config, as [Map] field values are encoded.
-  /// Each param in [params] becomes `masterKeyOnly` when it is in
-  /// [masterKeyOnly] and stops being one otherwise; params not in [params]
-  /// are left as they are. Needs [masterKey].
+  /// Merges [params] into the config, encoded as [encodeValue] does. Each
+  /// param in [params] is master-only if it is in [masterKeyOnly] and not
+  /// otherwise; other params are unchanged. Needs [masterKey].
   Future<void> saveConfig(
     Map<String, Object?> params, {
     Set<String> masterKeyOnly = const {},
@@ -140,10 +128,9 @@ final class ParseClient {
     );
   }
 
-  /// Starts the `Parse.Cloud.job` [name] and returns at once with the id of
-  /// its `_JobStatus` object, whose `status` goes from `running` to
-  /// `succeeded` or `failed`; model `_JobStatus` with `@ParseClass` to read
-  /// it. Needs [masterKey].
+  /// Starts the cloud job [name] and returns the id of its `_JobStatus`
+  /// object without waiting for the job. Its `status` is `running`, then
+  /// `succeeded` or `failed`. Needs [masterKey].
   Future<String> startJob(String name, [Json params = const Json({})]) async {
     final headers = <String, String>{};
     await request(
@@ -157,10 +144,10 @@ final class ParseClient {
   }
 
   /// Sends [data], such as `{'alert': 'Hi'}`, to the installations
-  /// subscribed to any of [channels] or matched by [where], a query on
-  /// `_Installation`; give one of the two. Returns the id of the
-  /// `_PushStatus` object that tracks it, before it is sent. Needs
-  /// [masterKey] and a push adapter on the server.
+  /// subscribed to any of [channels] or matched by [where]; give one of the
+  /// two. Returns the id of the `_PushStatus` object, before the push is
+  /// sent. Throws [ArgumentError] when [where] is not on `_Installation`.
+  /// Needs [masterKey] and a push adapter on the server.
   Future<String> push(
     Map<String, Object?> data, {
     List<String>? channels,
@@ -191,34 +178,30 @@ final class ParseClient {
     return headers['x-parse-push-status-id']!;
   }
 
-  /// Every class's schema, as [Schema.get] returns one. Needs [masterKey].
+  /// Every class's schema, in the shape [Schema.get] returns. Needs
+  /// [masterKey].
   Future<List<Json>> schemas() async =>
       (await request(this, 'GET', '/schemas')).requireList<Json>('results');
 
-  /// The schema of [className], to read, create, change or delete. Needs
-  /// [masterKey].
+  /// The schema of [className].
   Schema schema(String className) => Schema._(this, className);
 
-  /// Sends the stored session as usual: the server rejects anonymous
-  /// uploads with 130 unless `fileUpload.enableForPublic` is set.
+  /// Uploads [bytes] with the stored session. Without a session, the server
+  /// rejects it with 130 unless `fileUpload.enableForPublic` is set.
   ///
-  /// The returned [ParseFile.name] is the stored name, which a File field
-  /// must hold: the server prefixes a random hex string, and appends the
-  /// extension of [contentType] when [name] has none. [contentType] is
-  /// required because without one the server assumes `text/plain` and names
-  /// such a file `.txt`. A [name] outside
-  /// `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*`, or longer than 128 characters, fails
-  /// with 122 (`validateFilename` in FilesAdapter.js).
+  /// Returns the file under its stored name, which a File field must hold:
+  /// [name] with a random hex prefix, and the extension of [contentType]
+  /// when [name] has none. A [name] outside `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*`,
+  /// or longer than 128 characters, fails with 122.
   ///
-  /// Downloads are served with the type of the stored name's extension, not
-  /// [contentType]; an extension the server does not know is served as
-  /// `Content-Type: false` (`getHandler` in FilesRouter.js). File URLs use
-  /// the server's `publicServerURL` when it is set, else the request host.
+  /// Downloads are served with the content type of the stored name's
+  /// extension, not [contentType]; an unknown extension is served as
+  /// `Content-Type: false`. File URLs use the server's `publicServerURL` when
+  /// set, else the request host.
   ///
   /// [metadata] and [tags] reach a `beforeSave(Parse.File)` trigger and the
-  /// files adapter, which on GridFS stores them with the file. [onProgress]
-  /// is called as the bytes are sent, and completing [cancel] aborts the
-  /// upload with a [NetworkError]. Uploads are never retried.
+  /// files adapter. [onProgress] is called as bytes are sent; completing
+  /// [cancel] aborts the upload with a [NetworkError]. Never retried.
   Future<ParseFile> uploadFile(
     Uint8List bytes, {
     required String name,
@@ -255,8 +238,8 @@ final class ParseClient {
     );
   }
 
-  /// The bytes of [file], fetched from its URL without Parse headers, as
-  /// a browser would.
+  /// The bytes of [file], fetched from its URL without Parse headers.
+  /// Throws [OtherParseError] for any status but 200.
   Future<Uint8List> downloadFile(ParseFile file) async {
     final response = await _send(
       this,
@@ -277,8 +260,8 @@ final class ParseClient {
     return response.bodyBytes;
   }
 
-  /// Removes [file] from storage. Objects whose File field holds it keep
-  /// the now broken reference. Needs [masterKey].
+  /// Removes [file] from storage; fields that hold it are not changed.
+  /// Needs [masterKey].
   Future<void> deleteFile(ParseFile file) async {
     await request(
       this,
@@ -288,15 +271,17 @@ final class ParseClient {
     );
   }
 
-  /// Items run concurrently on the server, in no set order, and each
-  /// succeeds or fails on its own unless `send(transaction: true)` is used.
+  /// A batch of writes. Items run concurrently on the server, in no set
+  /// order, and each succeeds or fails on its own unless sent with
+  /// `send(transaction: true)`.
   Batch batch() => Batch._(this);
 
   String get _mount => server.path.endsWith('/')
       ? server.path.substring(0, server.path.length - 1)
       : server.path;
 
-  /// Also closes the live query socket and ends every [Query.live] stream.
+  /// Closes the live query socket, ends every [Query.live] stream, and
+  /// closes the HTTP client if this client created it.
   void close() {
     _live.close();
     _changes.close();
@@ -338,8 +323,8 @@ final class ParseClient {
     }
   }
 
-  /// Only when [token] is still the stored one: a 209 for a token given to
-  /// `become`, or one already logged out, leaves the current session alone.
+  /// Clears the session only while [token] is the stored one, so a 209 for a
+  /// token given to `become`, or one already logged out, leaves it alone.
   Future<void> _invalidate(String token) async {
     await _session();
     if (_current?.token == token) await _setSession(null);
@@ -490,7 +475,7 @@ const _packageVersion = '0.2.0';
 
 const _cancelled = 'cancelled';
 
-/// The JS SDK's backoff: a random delay up to 125 ms times 2^[attempt].
+/// A random delay up to 125 ms × 2^[attempt].
 Future<void> _backoff(int attempt) => Future.delayed(
   Duration(milliseconds: Random().nextInt(125 * (1 << attempt) + 1)),
 );
@@ -612,8 +597,8 @@ Future<T> _decode<T extends Object>(
 const _web = identical(0, 0.0);
 const _maxSafeInt = 9007199254740991;
 
-/// JSON has no NaN or infinity, and the server keeps numbers as JS doubles,
-/// which store an int past 2^53 rounded, without an error.
+/// Throws [ArgumentError] for NaN and infinity, which JSON cannot hold, and
+/// for an int past 2^53, which the server would store rounded.
 void _checkNumbers(Object? v, String path) {
   switch (v) {
     case double() when !v.isFinite:

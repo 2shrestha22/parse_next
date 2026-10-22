@@ -86,9 +86,7 @@ final class Field<T, V> extends ExistsField<T> {
   Cond<T> oneOf(List<V> values) =>
       values.isEmpty ? Cond._nothing() : _cond({r'$in': _all(values)});
 
-  /// On Mongo an absent field matches; Postgres compiles `$nin` to `NOT IN`,
-  /// which never matches null (`buildWhereClause` in
-  /// PostgresStorageAdapter.js).
+  /// An absent field matches on Mongo, not on Postgres.
   Cond<T> noneOf(List<V> values) => _cond({r'$nin': _all(values)});
 
   /// Matches when this field equals [key] of any object [query] finds. Only
@@ -127,9 +125,7 @@ final class ComparableField<T, V> extends Field<T, V> {
   Sort<T> get desc => Sort._('-$_key');
 }
 
-/// On Postgres, `ne`, `oneOf` and `noneOf` fail with a 500: it passes a
-/// `{"__type":"Date"}` inside `$ne`, `$in` or `$nin` to SQL unconverted
-/// (`buildWhereClause` in PostgresStorageAdapter.js).
+/// On Postgres, `ne`, `oneOf` and `noneOf` fail with a 500.
 final class DateField<T> extends ComparableField<T, DateTime> {
   const DateField(String key) : super(key, encodeDate);
 }
@@ -137,31 +133,27 @@ final class DateField<T> extends ComparableField<T, DateTime> {
 final class StringField<T> extends ComparableField<T, String> {
   const StringField(super._key);
 
-  /// Postgres cannot unquote a `\E` in [prefix] and matches it wrongly
-  /// (`literalizeRegexPart` in PostgresStorageAdapter.js).
+  /// On Postgres, a [prefix] containing `\E` matches wrongly.
   Cond<T> startsWith(String prefix) => _cond({r'$regex': '^${_quote(prefix)}'});
 
-  /// Postgres cannot unquote a `\E` in [suffix], as in [startsWith].
+  /// On Postgres, a [suffix] containing `\E` matches wrongly.
   Cond<T> endsWith(String suffix) => _cond({r'$regex': '${_quote(suffix)}\$'});
 
-  /// Matches [text] anywhere in the string. Postgres cannot unquote a `\E`
-  /// in [text], as in [startsWith].
+  /// Matches [text] anywhere in the string. On Postgres, a [text]
+  /// containing `\E` matches wrongly.
   Cond<T> contains(String text) => _cond({r'$regex': _quote(text)});
 
-  /// [pattern] goes to the database unchanged: PCRE on Mongo, POSIX on
-  /// Postgres, so keep to the syntax both share.
+  /// [pattern] is passed to the database unchanged: PCRE on Mongo, POSIX on
+  /// Postgres.
   Cond<T> matches(String pattern, {bool caseInsensitive = false}) =>
       _cond({r'$regex': pattern, if (caseInsensitive) r'$options': 'i'});
 
   /// Matches [search] after stemming: on Mongo any of its words, or a
-  /// "quoted phrase". Postgres passes it to `to_tsquery`, where a space is a
-  /// syntax error (500), so keep to one word there.
+  /// "quoted phrase"; on Postgres one word, and a space fails with a 500.
   ///
-  /// On Mongo, a class can have one text index and `$text` searches it
-  /// whatever the field, so use this on one field per class. Only a find
-  /// creates that index, so a `count` before the first find is a 500
-  /// (`createTextIndexesIfNeeded` in MongoStorageAdapter.js). Mongo also
-  /// rejects it inside `|` and together with `near`.
+  /// On Mongo it searches the class's one text index whatever the field, a
+  /// `count` before the class's first `find` with it fails with a 500, and
+  /// it fails inside `|` and together with `near`.
   Cond<T> fullText(
     String search, {
     String? language,
@@ -179,8 +171,8 @@ final class StringField<T> extends ComparableField<T, String> {
   });
 }
 
-/// The JS SDK's quoting: a `\E` inside ends the quote, adds a literal `\E`
-/// and quotes again.
+/// Quotes [s] as `\Q...\E`; a `\E` inside ends the quote, adds a literal
+/// `\E` and quotes again.
 String _quote(String s) => '\\Q${s.replaceAll(r'\E', r'\E\\E\Q')}\\E';
 
 final class ListField<T, E> extends ExistsField<T> {
@@ -188,7 +180,8 @@ final class ListField<T, E> extends ExistsField<T> {
 
   final Object? Function(E) _encode;
 
-  /// Sent as `$all`: Postgres answers an equality on an array with a 500.
+  /// Matches a list holding [value].
+  // `$all`, not equality: Postgres answers an equality on an array with a 500.
   Cond<T> contains(E value) => containsAll([value]);
 
   /// An empty list matches nothing.
@@ -278,8 +271,8 @@ final class GeoField<T> extends ExistsField<T> {
     if (maxKm != null) r'$maxDistance': maxKm / 6371,
   });
 
-  /// Within [km] of [point], unsorted, so that it combines with `orderBy`
-  /// and `|`, unlike [near].
+  /// Within [km] of [point], unsorted. Unlike [near], it combines with
+  /// `orderBy` and `|`.
   Cond<T> withinKm(GeoPoint point, double km) => _cond({
     r'$geoWithin': {
       r'$centerSphere': [
@@ -316,8 +309,7 @@ final class PolygonField<T> extends ExistsField<T> {
   });
 }
 
-/// Postgres has no equality for files (`buildWhereClause` in
-/// PostgresStorageAdapter.js); there `eq` and `ne` fail.
+/// On Postgres, `eq` and `ne` fail.
 final class FileField<T> extends Field<T, ParseFile> {
   const FileField(String key) : super(key, _fileJson);
 }
@@ -341,8 +333,8 @@ final class RelationField<T, R> {
   final ParseSchema<T, Object?, Object?> _owner;
   final ParseSchema<R, Object?, Object?> _member;
 
-  /// Matches the [T] objects whose relation holds [member]. A live query
-  /// never matches it: the LiveQuery server sees no relation members.
+  /// Matches the [T] objects whose relation holds [member]. Never matches
+  /// in a live query.
   Cond<T> has(Pointer<R> member) => Cond._({_key: member.encode(_member)});
 
   /// The members of this relation on the [T] object [ownerId]; a condition
@@ -449,8 +441,8 @@ final class Query<T, F, O> {
   Query<T, F, O> readPreference(ReadPreference preference) =>
       _option('readPreference', preference._wire);
 
-  /// Returns at most [limit], or 100 without one: the server's default, sent
-  /// explicitly. [stream] fetches every match.
+  /// Returns at most [limit], or 100 without one. [stream] fetches every
+  /// match.
   Future<List<Doc<T>>> find() => _find(_body(limit: _limit ?? _pageSize));
 
   /// [find] and [count] in one request.
@@ -521,8 +513,7 @@ final class Query<T, F, O> {
   ))['results'];
 
   /// Every match, fetched 100 at a time in objectId order. Throws
-  /// [StateError] when the query has [orderBy], [skip] or [limit], which
-  /// the objectId cursor replaces.
+  /// [StateError] when the query has [orderBy], [skip] or [limit].
   Stream<Doc<T>> stream() {
     if (_order.isNotEmpty || _skip != null || _limit != null) {
       throw StateError(
@@ -552,38 +543,34 @@ final class Query<T, F, O> {
   /// WebSocket per [ParseClient] that opens with the first listener and
   /// closes when the last one cancels.
   ///
-  /// The stream emits [Subscribed] each time the server confirms the
-  /// subscription: first after listening, then after every reconnect, and
-  /// [Disconnected] when the connection is lost. Changes between the two may
-  /// be missing and are never replayed, so (re)load the state after each
-  /// [Subscribed]. A lost connection is retried after 1 s, doubling up to
-  /// 30 s, and never ends the stream.
+  /// Emits [Subscribed] each time the server confirms the subscription:
+  /// after listening and after every reconnect. Emits [Disconnected] when
+  /// the connection is lost; changes until the next [Subscribed] are not
+  /// replayed. A lost connection is retried after 1 s, doubling up to 30 s,
+  /// and never ends the stream.
   ///
   /// With [watch], an object that still matches is reported as [Updated]
   /// only when one of those fields changed; `create`, `enter`, `leave` and
   /// `delete` are always reported.
   ///
-  /// The subscription keeps the session of the moment it is listened to;
-  /// a later login or logout does not change it, and one made without a
-  /// session sees only what anyone may read. An invalid token is not an
-  /// error: the server treats it as no session.
+  /// The subscription uses the session of the moment it is listened to; a
+  /// later login or logout does not change it. Without a session, or with
+  /// an invalid one, it sees only what anyone may read.
   ///
   /// A server error for this subscription, such as an invalid `matches`
-  /// pattern (102), is emitted as its [ParseException] with the HTTP status
-  /// the server gives that code elsewhere, and ends the stream. Only classes
-  /// in the server's `liveQuery.classNames` publish changes; a subscription
-  /// to any other class is accepted and never emits.
+  /// pattern (102), is emitted as its [ParseException] and ends the stream.
+  /// Only classes in the server's `liveQuery.classNames` publish changes; a
+  /// subscription to any other class never emits.
   ///
-  /// The server matches in JavaScript (QueryTools.js): strings compare by
-  /// UTF-16 code unit, as on Mongo, and `withinBox` leaves out its edges.
-  /// Throws [ArgumentError] for the conditions it cannot match:
-  /// [StringField.fullText], [PointerField.matchesQuery],
+  /// Strings compare by UTF-16 code unit, and `withinBox` leaves out its
+  /// edges. Throws [ArgumentError] for the conditions a live query cannot
+  /// match: [StringField.fullText], [PointerField.matchesQuery],
   /// [PointerField.notMatchesQuery], [Field.matchesKey],
   /// [Field.notMatchesKey], [RelationField.of], any condition on `createdAt`
   /// or `updatedAt`, `oneOf` and `noneOf` on a date, `contains` on a pointer
-  /// list, `containsAllStartingWith`, and an empty `containsAll`. Throws [StateError] when the query has [include],
-  /// [orderBy], [limit], [skip] or another option, which a live query cannot
-  /// apply.
+  /// list, `containsAllStartingWith`, and an empty `containsAll`. Throws
+  /// [StateError] when the query has [include], [orderBy], [limit], [skip]
+  /// or another option.
   Stream<LiveEvent<T>> live({List<ExistsField<T>> Function(F f)? watch}) {
     if (_include.isNotEmpty ||
         _order.isNotEmpty ||
@@ -648,9 +635,9 @@ final class Query<T, F, O> {
     ..._options,
   });
 
-  /// A POST read as a GET (`allowMethodOverride` in middlewares.js), as the
-  /// JS SDK sends every query: in a URL, a `where` of about 1,000 ids is
-  /// over Node's 16 KB header limit and fails with 431.
+  /// A POST read as a GET (`allowMethodOverride` in middlewares.js): in a
+  /// URL, a `where` of about 1,000 ids passes Node's 16 KB header limit and
+  /// fails with 431.
   Future<Json> _get(Json body) => request(
     _client,
     'POST',

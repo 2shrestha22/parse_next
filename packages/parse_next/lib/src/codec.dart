@@ -6,8 +6,7 @@ import 'exception.dart';
 
 /// A JSON object from the server, with typed reads that raise [DecodeError].
 ///
-/// A key set to `null` and a missing key read the same: Mongo returns a
-/// field set to null as `"x": null`, Postgres leaves it out.
+/// A key set to `null` and a missing key read the same.
 ///
 /// `T` may be a JSON primitive, `num`, `Json`, `Object`, or one of the wire
 /// types [DateTime] (`__type: Date`, or the plain ISO string of `createdAt`
@@ -233,9 +232,7 @@ final class GeoPoint {
 }
 
 final class Polygon {
-  /// [points] are kept open: a last point equal to the first is dropped,
-  /// because the server closes the ring by appending the first point
-  /// (`PolygonCoder.JSONToDatabase` in parse-server's `MongoTransform.js`).
+  /// [points] are kept open: a last point equal to the first is dropped.
   Polygon(List<GeoPoint> points)
     : points = List.unmodifiable(
         points.length > 1 && points.first == points.last
@@ -254,8 +251,8 @@ final class Polygon {
   final List<GeoPoint> points;
 
   /// Whether [point] is inside or on the edge, planar on latitude and
-  /// longitude as in the JS SDK; the server's `containsPoint` query measures
-  /// on a sphere on Mongo, which differs near long edges.
+  /// longitude. The `containsPoint` query measures on a sphere on Mongo,
+  /// which differs near long edges.
   bool containsPoint(GeoPoint point) {
     var inside = false;
     for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -300,14 +297,14 @@ final class Polygon {
 }
 
 final class ParseFile {
+  // [url] is required: parse-server before 9.10.2 dies on a File without
+  // one, anywhere in an object, when its class has a trigger (triggers.js).
   const ParseFile({required this.name, required this.url});
 
   final String name;
 
-  /// Ignored by `==`: the server stores only the name and builds the URL from
-  /// its `publicServerURL`, or from the request host when that is unset.
-  /// Required all the same: parse-server before 9.10.2 dies on a File without
-  /// one, anywhere in an object, when its class has a trigger (triggers.js).
+  /// Ignored by `==`. The server builds it from its `publicServerURL`, or
+  /// from the request host when that is unset.
   final String url;
 
   Map<String, Object?> toJson() => {'__type': 'File', 'name': name, 'url': url};
@@ -377,22 +374,19 @@ Map<String, Object?> encodeDate(DateTime date) => {
   'iso': _truncate(date).toIso8601String(),
 };
 
-/// The server rejects empty bytes with 111, since it checks `base64` for
-/// truthiness (`getObjectType` in SchemaController.js).
+/// The server rejects empty bytes with 111.
 Map<String, Object?> encodeBytes(Uint8List bytes) => {
   '__type': 'Bytes',
   'base64': base64Encode(bytes),
 };
 
 /// The wire form of a value in a `Map<String, Object?>` field or param, at
-/// any depth, as the JS SDK encodes one: [DateTime], [GeoPoint], [Polygon]
-/// and [ParseFile] become their `__type` objects.
+/// any depth: [DateTime], [GeoPoint], [Polygon] and [ParseFile] become their
+/// `__type` objects.
 ///
-/// Throws [ArgumentError] for what the server would store wrongly: a
-/// [Uint8List], which Mongo returns from inside an object as raw BSON; a
-/// `__type` or `__op` key, which the server reads as a typed value or an
-/// operation; and any value JSON cannot hold, such as a [Pointer], which needs
-/// its class.
+/// Throws [ArgumentError] for a [Uint8List], which Mongo returns from inside
+/// an object as raw BSON; a `__type` or `__op` key, which the server reads as
+/// a typed value or an operation; and any other value, such as a [Pointer].
 Object? encodeValue(Object? value) => _encodeValue(value, 'value');
 
 Object? _encodeValue(Object? v, String path) => switch (v) {

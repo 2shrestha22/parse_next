@@ -11,7 +11,7 @@ final class Collection<T, F, O> {
 
   /// Null fields are left out. The returned [Doc] includes the fields a
   /// `beforeSave` trigger changed, and its [Doc.updatedAt] is
-  /// [Doc.createdAt], since the create response carries no `updatedAt`.
+  /// [Doc.createdAt].
   ///
   /// [id] is the new object's id, which the server accepts only with
   /// `allowCustomObjectId`. [context] reaches the triggers as
@@ -82,10 +82,9 @@ final class Collection<T, F, O> {
   }
 
   /// Runs [pipeline], such as `[{r'$group': {'_id': r'$tag'}}]`, and returns
-  /// its rows undecoded; a `$group` `_id` comes back as `objectId`. The
-  /// database runs it: Postgres knows only `$group`, `$match`, `$project`,
-  /// `$sort`, `$limit` and `$skip` (`aggregate` in
-  /// PostgresStorageAdapter.js). Needs [ParseClient.masterKey].
+  /// its rows undecoded; a `$group` `_id` comes back as `objectId`. Postgres
+  /// supports only `$group`, `$match`, `$project`, `$sort`, `$limit` and
+  /// `$skip`. Needs [ParseClient.masterKey].
   Future<List<Json>> aggregate(List<Map<String, Object?>> pipeline) async =>
       (await request(
         _client,
@@ -107,7 +106,9 @@ final class Collection<T, F, O> {
     final ops = build(_schema.ops);
     if (ops.isEmpty) throw ArgumentError.value(ops, 'build', 'returned no ops');
     final body = Json({});
-    // Fields with a `MapOps` key op, which takes the whole field.
+    // Fields with a `MapOps` key op. Two key ops on one map are refused: when
+    // the class has a trigger, parse-server 9.9.0 answers them with a 500 on
+    // Mongo.
     final maps = <String>{};
     for (final op in ops) {
       final dot = op._key.indexOf('.');
@@ -307,10 +308,7 @@ final class NullableListOps<E> extends ListOps<E> {
 
 /// [setKey], [incrementKey] and [unsetKey] change one top-level key of the
 /// map and leave the rest. Throws [ArgumentError] for a dotted key and, in
-/// `Collection.update`, for two of them on one map: when the class has a
-/// trigger, parse-server 9.9.0 stores a deeper path one level up, and
-/// answers two keys of one map with a 500 on Mongo (the JS SDK expands each
-/// into the whole map, in `_getSaveJSON`).
+/// `Collection.update`, for two of them on one map.
 final class MapOps extends SetOps<Map<String, Object?>> {
   const MapOps(String key) : super(key, encodeValue);
 
@@ -321,6 +319,8 @@ final class MapOps extends SetOps<Map<String, Object?>> {
 
   Op unsetKey(String key) => _at(key, _delete);
 
+  // No dotted keys: when the class has a trigger, parse-server 9.9.0 stores
+  // a deeper path one level up.
   Op _at(String key, Object? json) => key.isEmpty || key.contains('.')
       ? throw ArgumentError.value(key, 'key', 'must be one key, without a dot')
       : Op._('$_key.$key', json);

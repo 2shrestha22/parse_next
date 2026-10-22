@@ -54,12 +54,7 @@ final class _Session {
 
 /// Sign-up, login and the current user, for the `_User` model [U].
 ///
-/// Sign-up, login, become and password reset never send the stored token:
-/// a revoked one would fail sign-up and password reset with 209 (only
-/// `/login` drops it, in `handleParseHeaders` in middlewares.js).
-///
-/// Sessions are always revocable, so `X-Parse-Revocable-Session` is not
-/// sent: parse-server ignores it and returns `r:` tokens from every route.
+/// Sign-up, login, become and password reset never send the stored token.
 final class Auth<U> {
   Auth._(this._client, this._schema);
 
@@ -74,8 +69,7 @@ final class Auth<U> {
   /// The stored user, without a request; null when logged out.
   Future<Doc<U>?> current() async => _doc(await _client._session());
 
-  /// The returned [Doc] has no [Doc.acl], since the response carries none;
-  /// [me] fetches it.
+  /// The returned [Doc] has no [Doc.acl]; [me] fetches it.
   Future<Doc<U>> signUp({required String password, required U user}) async {
     final fields = _withoutNulls(_schema.encode(user));
     final response = await request(
@@ -103,11 +97,9 @@ final class Auth<U> {
   /// Logs in the user linked to [authData] for [provider], or signs up a new
   /// one. The server validates [authData] with that provider's auth adapter.
   ///
-  /// Never sends the stored token: with a session, the server links
-  /// [authData] to that user instead of logging in (`handleAuthData` in
-  /// RestWrite.js). Throws [InvalidCredentials] when the adapter rejects
-  /// [authData] with 101, as parse-server's built-in adapters do, and
-  /// [OtherParseError] 252 for a provider the server does not have.
+  /// Throws [InvalidCredentials] when the adapter rejects [authData] with
+  /// 101, as the built-in adapters do, and [OtherParseError] 252 for a
+  /// provider the server does not have.
   ///
   /// For a new user the returned [Doc] has no [Doc.acl], as from [signUp].
   Future<Doc<U>> logInWith(
@@ -155,7 +147,7 @@ final class Auth<U> {
     }
   }
 
-  /// Succeeds for an unknown [email] too: parse-server answers alike unless
+  /// Succeeds for an unknown [email] too, unless the server's
   /// `passwordPolicy.resetPasswordSuccessOnInvalidEmail` is false. Needs an
   /// email adapter, `appName` and `publicServerURL` on the server.
   Future<void> requestPasswordReset(String email) async {
@@ -169,9 +161,8 @@ final class Auth<U> {
   }
 
   /// Sends [email] a new verification mail. Needs `verifyUserEmails` and an
-  /// email adapter on the server; fails with 205 for an unknown or already
-  /// verified address only when
-  /// `emailVerifySuccessOnInvalidEmail` is false.
+  /// email adapter on the server. Fails with 205 for an unknown or already
+  /// verified address only when `emailVerifySuccessOnInvalidEmail` is false.
   Future<void> requestEmailVerification(String email) async {
     await request(
       _client,

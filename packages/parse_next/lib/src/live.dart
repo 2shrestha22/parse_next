@@ -28,7 +28,7 @@ final class Updated<T> extends LiveEvent<T> {
 
 /// A change made a matching object stop matching. [doc] is the object after
 /// the change, or before it when the change took away this subscription's
-/// read access (`_onAfterSave` in ParseLiveQueryServer.ts).
+/// read access.
 final class Left<T> extends LiveEvent<T> {
   const Left(this.doc);
 
@@ -42,9 +42,8 @@ final class Deleted<T> extends LiveEvent<T> {
   final Doc<T> doc;
 }
 
-/// The server confirmed the subscription: first after listening, then after
-/// every reconnect. Changes before a [Subscribed] may be missing and are not
-/// replayed, so (re)load the state after each one.
+/// The server confirmed the subscription: after listening and after every
+/// reconnect. Changes before it may be missing and are not replayed.
 final class Subscribed<T> extends LiveEvent<T> {
   const Subscribed();
 }
