@@ -14,14 +14,14 @@ Tested against parse-server 9.9.0 on MongoDB and on Postgres.
 
 Grouped as the [Parse JavaScript guide](https://docs.parseplatform.org/js/guide/) is, so it can be read side by side with it. Checked items are in the SDK and tested, most against both databases in `parse_next_it` and the rest, such as the distance helpers, in unit tests. Unchecked items are not in the SDK, with the reason.
 
-Features that need the master key are left out on purpose: a client app must not hold it.
+The master key is for Dart code that runs on a server; an app must not hold it.
 
 ### Getting started
 - [x] Connect with server URL, app id and client key — `ParseClient(server:, appId:, clientKey:)`
 - [x] An `http.Client` of your own, a request timeout
 - [x] One installation id per install — `ParseClient(installationId:)`
 - [x] Retries, opt-in — `attempts` for reads; `idempotency` for writes, which uses the server's `idempotencyOptions`
-- [ ] Master key — not in a client SDK
+- [x] Master key, for code on a server — `ParseClient(masterKey:)`, sent on every request and on the live query connection
 
 ### Objects
 - [x] Typed classes — `@ParseClass('Post')` and the generator
@@ -61,7 +61,7 @@ Features that need the master key are left out on purpose: a client app must not
 - [x] Conditions inside an Object field — `f.meta.at('a.b')`
 - [x] `hint`, `comment`, `readPreference`
 - [x] More than ~1,000 ids in a condition — queries are sent in the body, never in the URL
-- [ ] `explain`, `aggregate`, `distinct` — need the master key
+- [x] `explain`, `aggregate`, `distinct` — `query.explain()`, `collection.aggregate(pipeline)`, `query.distinct((f) => f.x)`, undecoded; need the master key
 - [ ] Local vs. server data — no local store
 
 #### Queries on arrays
@@ -124,7 +124,7 @@ Features that need the master key are left out on purpose: a client app must not
 - [x] Store in an object field — `ParseFile`
 - [x] Download — `client.downloadFile(file)`
 - [x] Metadata and tags — `uploadFile(metadata:, tags:)`
-- [ ] Delete — needs the master key
+- [x] Delete — `client.deleteFile(file)`; needs the master key
 
 ### GeoPoints
 - [x] `GeoPoint`, `Polygon`, distances — `radiansTo`, `kilometersTo`, `milesTo`, `Polygon.containsPoint`
@@ -138,11 +138,13 @@ Features that need the master key are left out on purpose: a client app must not
 
 ### Push notifications
 - [x] An installation id on every request
-- [ ] An `_Installation` type, sending pushes — sending needs the master key; model `_Installation` with `@ParseClass` if you need it (untested)
+- [x] Send a push to channels or to an `_Installation` query — `client.push(data, channels:)`, `push(data, where:)`; needs the master key and a push adapter on the server
+- [x] An `_Installation` type — model it with `@ParseClass('_Installation')`
+- [ ] Scheduled pushes and expiry (`push_time`, `expiration_time`) — not supported
 
 ### Config
-- [x] Retrieve config — `client.config()`; `masterKeyOnly` params are not sent (unit-tested only)
-- [ ] Save config — needs the master key
+- [x] Retrieve config — `client.config()`; `masterKeyOnly` params are sent only with the master key
+- [x] Save config — `client.saveConfig(params, masterKeyOnly:)`; needs the master key
 - [ ] A cached current config — keep the result yourself
 
 ### Analytics
@@ -150,10 +152,10 @@ Features that need the master key are left out on purpose: a client app must not
 
 ### Cloud Code
 - [x] Call functions with typed parameters and results — `@ParseFunctions`
-- [ ] Jobs — need the master key
+- [x] Start a job — `client.startJob(name, params)`, returning its `_JobStatus` id; needs the master key
 
 ### Schema
-- [ ] Schemas, indexes, purge — need the master key
+- [x] Schemas, indexes, class-level permissions, purge — `client.schemas()`, `client.schema(name)` with `get`, `create`, `update`, `delete`, `purge`; untyped; need the master key
 
 ### Relations
 - [x] One-to-one and one-to-many — `Pointer<T>`

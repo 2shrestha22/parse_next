@@ -24,7 +24,7 @@ Package names `parse_next` and `parse_next_generator` were unclaimed on pub.dev 
 
 **In scope:** wire codec, transport, CRUD with ops, typed queries, the generator, auth, cloud functions, batch, files, live queries.
 
-**Out of scope:** dirty tracking and `save()`, typed projections, local datastore and offline support, master key and admin APIs, push, the schema-pull CLI, nested embedded classes. Each needs its own plan; none gets added quietly.
+**Out of scope:** dirty tracking and `save()`, typed projections, local datastore and offline support, the schema-pull CLI, nested embedded classes. Each needs its own plan; none gets added quietly.
 
 ## Rules for the whole repo
 
@@ -125,6 +125,10 @@ Later phases must follow these:
 | `POST /users` with `authData` answers a new user with 201 and only `objectId`, `createdAt`, a generated `username`, `sessionToken` and `authDataResponse` (no `updatedAt`, no `ACL`), and an existing one with 200 and the whole user, including `authData`. With a session token the request links the `authData` to that user instead of logging in (`handleAuthData` in `RestWrite.js`), so `logInWith` never sends the stored token. | Phase 6 |
 | A rejected `authData` keeps the adapter's `Parse.Error` code (`handleAuthDataValidation` in `Auth.js`); the built-in adapters reject with 101, HTTP 404 (93 of their throws in `src/Adapters/Auth/`), so `logInWith` maps 101 to `InvalidCredentials`. A provider the server does not have is 252 `This authentication method is unsupported.`, HTTP 400, and stays `OtherParseError`; an adapter that throws a non-Parse error is 141. | Phase 6 |
 | `GET /config` without the master key leaves out every param marked `masterKeyOnly`, and also returns a `masterKeyOnly` map of the other keys (`getGlobalConfig` in `GlobalConfigRouter.js`). `PUT /config` merges into the stored params. | Phase 7 |
+| With a valid master key the server acts as no user and ignores the session token (`handleParseHeaders` in `middlewares.js`); from an address outside `masterKeyIps` (localhost by default) it is 403 `unauthorized`, and a wrong key is treated as no key. `PUT /config` sets `masterKeyOnly.<key>` to false for every param sent without it (`updateGlobalConfig` in `GlobalConfigRouter.js`). | Phase 11 |
+| `/aggregate/:className` needs the master key (403 without it); `explain` on `/classes` without it is 102. `distinct` applies `where`, a `pipeline` ignores it (`find` in `DatabaseController.js`). A `$group` `_id` comes back as `objectId`. `distinct` on a Date returns `{"__type":"Date"}` on Mongo and an ISO string on Postgres; `explain` returns an object on Mongo and a list of rows on Postgres. | Phase 11 |
+| `POST /jobs/:name` and `POST /push` answer at once with the status object's id only in a header, `X-Parse-Job-Status-Id` or `X-Parse-Push-Status-Id`, and an empty object or `{"result":true}`; `_JobStatus` keeps neither the params nor the result. `DELETE /files/:name` answers 200 with an empty body. | Phase 11 |
+| The LiveQuery server ignores a `masterKey` on `connect` unless its `keyPairs` list one, and once `keyPairs` is set it refuses a client that matches none of them (`_validateKeys` in `ParseLiveQueryServer.ts`). | Phase 11 |
 | `$in` on an Array field matches a list holding any of the values on both databases: Postgres compiles it to `array_contains` (`buildWhereClause` in `PostgresStorageAdapter.js`, `sql/array/contains.sql`), which is `STRICT`, so an absent list never matches, as on Mongo; pointer lists work on both. `$in: []` is `IS NULL` on Postgres and matches only absent lists, so `containsAny([])` throws `ArgumentError`. LiveQuery's `contains` in `QueryTools.js` compares pointers by `className` and `objectId`, so `containsAny` on a pointer list matches live as in a find. | Phase 4, 9 |
 | Upload errors are HTTP 400: an anonymous upload is 130 `File upload by public is disabled.`, an empty body 130 `Invalid file upload.`, a name outside `[_a-zA-Z0-9][a-zA-Z0-9@. ~_-]*` or over 128 characters 122 (`validateFilename` in `FilesAdapter.js`). | Phase 8 |
 
@@ -375,6 +379,25 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 **Exit:** tag `0.1.0`.
 
+## Phase 11: Master key and admin APIs
+
+**Build**
+- `ParseClient(masterKey:)`, sent as `X-Parse-Master-Key` on every request and as `masterKey` on the live query `connect`
+- `Collection.aggregate`, `Query.distinct`, `Query.explain`, returning undecoded JSON
+- `saveConfig`, `deleteFile`, `startJob`, `push`, `schemas` and `schema(name)` with `get`, `create`, `update`, `delete`, `purge`
+
+**Rules**
+- Per client, not per call: a flag on every method is one more thing to forget, and the server ignores the session once the key is valid, so a mixed client would not act as its user anyway.
+- Admin APIs take and return JSON as the REST API writes it; the server validates it.
+
+**Verify (integration)**
+- A master-key client reads and writes an object whose ACL lets no one in, and a cloud function it calls sees no user although a session is set.
+- Aggregate, distinct with a where, and explain on both databases; aggregate without the key is `Unauthorized`.
+- Saved config params, and a `masterKeyOnly` one hidden from a client without the key.
+- A deleted file is no longer served; a started job runs with its params; a push reaches the installations of its channel or query, through a recording adapter.
+- A schema is created with fields and an index, changed, refused deletion while it has objects, purged and deleted.
+- A master-key live subscription sees an object no session can read.
+
 ---
 
 ## What counts as "done", for every phase
@@ -388,7 +411,7 @@ parse_next/                     pub workspace (Dart ≥ 3.8)
 
 - Both Mongo and Postgres are required.
 - Web is a supported platform.
-- The master key stays out of v1.
+- The master key is per client, not per call: a client given one sends it on every request (Phase 11).
 - The batch limit is settled: there is no default limit (see the Phase 8 Rules).
 - The lower bound is the oldest SDK whose language features and dependencies the code needs, and it is raised only when the code starts using something newer. It is not tested in CI, so as not to block apps on older Flutter. 3.8.0 is needed for null-aware map elements (`'key': ?value`), and by the generator's dependencies: it was raised from 3.6.0 in Phase 5. On 3.6, pub resolves `analyzer` 7, `source_gen` 2 and `build` 2, whose element API (`ParameterElement`, `parameters`) is the one analyzer 8 removed, while stable resolves `analyzer` 14; no one generator source compiles against both. Analyzer 8.0, the first with only the current API, needs 3.7, and `freezed` 3.2.1, the first to accept analyzer 8, needs 3.8. In `dart:3.8.0`, pub resolves `analyzer` 8.1.1, `source_gen` 4.2.0, `build` 4.0.7, `build_runner` 2.15.1, `build_test` 3.5.16, `freezed` 3.2.3, `lints` 6.1.0 and `test` 1.31.0. Language version 3.8 formats with the tall style, which the 3.8.0 and stable formatters agree on.
 - parse-server 9.9.0 is what the app in production runs: 9.10.0 rejects a `$relatedTo` query on a protected `_User` relation even for the user's own object. Mongo 8.0 and Postgres 18 with PostGIS 3.6 are versions parse-server's own CI tests. PostGIS publishes no patch-level tag and no arm64 image, so it is pinned by digest and runs under emulation on Apple Silicon.

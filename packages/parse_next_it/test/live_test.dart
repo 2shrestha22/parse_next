@@ -58,6 +58,28 @@ void main() {
       expect(watch.errors, isEmpty);
     });
 
+    test('the master key sees objects no session can read', () async {
+      final admin = backend.client(master: true);
+      addTearDown(admin.close);
+      final name = unique('master');
+      final asAdmin = Watch(
+        admin.collection(signals).where((f) => f.name.eq(name)).live(),
+      );
+      final asAnyone = Watch(
+        client().collection(signals).where((f) => f.name.eq(name)).live(),
+      );
+      await asAdmin.confirmed();
+      await asAnyone.confirmed();
+
+      final doc = await admin
+          .collection(signals)
+          .create(Signal(name: name), acl: const Acl());
+      await until(() => asAdmin.about(doc.id).isNotEmpty, reason: 'Created');
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(asAdmin.about(doc.id), [isA<Created<Signal>>()]);
+      expect(asAnyone.about(doc.id), isEmpty);
+    });
+
     test(
       'a restarted server is resubscribed and delivers later writes',
       timeout: const Timeout(Duration(minutes: 3)),

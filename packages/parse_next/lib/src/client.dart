@@ -14,6 +14,7 @@ part 'batch.dart';
 part 'collection.dart';
 part 'live.dart';
 part 'query.dart';
+part 'schema.dart';
 
 final class ParseClient {
   /// [server] is the mount point, such as `https://example.com/parse`.
@@ -31,6 +32,7 @@ final class ParseClient {
     required this.server,
     required this.appId,
     this.clientKey,
+    this.masterKey,
     this.installationId,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
@@ -50,6 +52,17 @@ final class ParseClient {
 
   /// Sent as `X-Parse-Client-Key` when set.
   final String? clientKey;
+
+  /// For code that runs on a server; never put it in an app. Sent as
+  /// `X-Parse-Master-Key` on every request, which then bypasses ACLs and
+  /// class-level permissions and acts as no user: the server ignores the
+  /// session token. For requests as a user, use a second client without it.
+  ///
+  /// The server takes it only from an address in its `masterKeyIps`,
+  /// localhost by default, and answers anyone else with [Unauthorized]. A
+  /// LiveQuery server honours it only when its `keyPairs` list `masterKey`.
+  /// A `readOnlyMasterKey` goes here too.
+  final String? masterKey;
 
   /// One per install of the app, kept across runs; the JS SDK uses a random
   /// UUID. Without it every login adds a session, because the server replaces
@@ -102,11 +115,89 @@ final class ParseClient {
   Future<Json> callFunction(String name, Json params) =>
       request(this, 'POST', '/functions/$name', body: params);
 
-  /// The `params` of `GET /config`. Params the server marks
-  /// `masterKeyOnly` are left out of the response (`getGlobalConfig` in
-  /// GlobalConfigRouter.js).
+  /// The `params` of `GET /config`. Without [masterKey], params the server
+  /// marks `masterKeyOnly` are left out of the response (`getGlobalConfig`
+  /// in GlobalConfigRouter.js).
   Future<Json> config() async =>
       (await request(this, 'GET', '/config')).require<Json>('params');
+
+  /// Merges [params] into the config, as [Map] field values are encoded.
+  /// Each param in [params] becomes `masterKeyOnly` when it is in
+  /// [masterKeyOnly] and stops being one otherwise; params not in [params]
+  /// are left as they are. Needs [masterKey].
+  Future<void> saveConfig(
+    Map<String, Object?> params, {
+    Set<String> masterKeyOnly = const {},
+  }) async {
+    await request(
+      this,
+      'PUT',
+      '/config',
+      body: Json({
+        'params': encodeValue(params),
+        'masterKeyOnly': {for (final k in masterKeyOnly) k: true},
+      }),
+    );
+  }
+
+  /// Starts the `Parse.Cloud.job` [name] and returns at once with the id of
+  /// its `_JobStatus` object, whose `status` goes from `running` to
+  /// `succeeded` or `failed`; model `_JobStatus` with `@ParseClass` to read
+  /// it. Needs [masterKey].
+  Future<String> startJob(String name, [Json params = const Json({})]) async {
+    final headers = <String, String>{};
+    await request(
+      this,
+      'POST',
+      '/jobs/${Uri.encodeComponent(name)}',
+      body: params,
+      responseHeaders: headers,
+    );
+    return headers['x-parse-job-status-id']!;
+  }
+
+  /// Sends [data], such as `{'alert': 'Hi'}`, to the installations
+  /// subscribed to any of [channels] or matched by [where], a query on
+  /// `_Installation`; give one of the two. Returns the id of the
+  /// `_PushStatus` object that tracks it, before it is sent. Needs
+  /// [masterKey] and a push adapter on the server.
+  Future<String> push(
+    Map<String, Object?> data, {
+    List<String>? channels,
+    Query<Object?, Object?, Object?>? where,
+  }) async {
+    final Object? condition;
+    if (where == null) {
+      condition = null;
+    } else {
+      final sub = where._subquery();
+      if (sub['className'] != '_Installation') {
+        throw ArgumentError.value(where, 'where', 'must be on _Installation');
+      }
+      condition = sub['where'];
+    }
+    final headers = <String, String>{};
+    await request(
+      this,
+      'POST',
+      '/push',
+      body: Json({
+        'data': encodeValue(data),
+        'channels': ?channels,
+        'where': ?condition,
+      }),
+      responseHeaders: headers,
+    );
+    return headers['x-parse-push-status-id']!;
+  }
+
+  /// Every class's schema, as [Schema.get] returns one. Needs [masterKey].
+  Future<List<Json>> schemas() async =>
+      (await request(this, 'GET', '/schemas')).requireList<Json>('results');
+
+  /// The schema of [className], to read, create, change or delete. Needs
+  /// [masterKey].
+  Schema schema(String className) => Schema._(this, className);
 
   /// Sends the stored session as usual: the server rejects anonymous
   /// uploads with 130 unless `fileUpload.enableForPublic` is set.
@@ -186,6 +277,17 @@ final class ParseClient {
     return response.bodyBytes;
   }
 
+  /// Removes [file] from storage. Objects whose File field holds it keep
+  /// the now broken reference. Needs [masterKey].
+  Future<void> deleteFile(ParseFile file) async {
+    await request(
+      this,
+      'DELETE',
+      '/files/${Uri.encodeComponent(file.name)}',
+      empty: true,
+    );
+  }
+
   /// Items run concurrently on the server, in no set order, and each
   /// succeeds or fails on its own unless `send(transaction: true)` is used.
   Batch batch() => Batch._(this);
@@ -248,7 +350,9 @@ final class ParseClient {
 ///
 /// Sends [sessionToken], or the stored session's when it is null and
 /// [stored] is true. [context] reaches the triggers the request runs as
-/// `request.context`.
+/// `request.context`. [responseHeaders], when given, receives the
+/// response's headers, with lowercase names. With [empty], a 2xx without a
+/// body returns an empty object.
 Future<Json> request(
   ParseClient client,
   String method,
@@ -258,6 +362,8 @@ Future<Json> request(
   String? sessionToken,
   bool stored = true,
   Map<String, Object?>? context,
+  Map<String, String>? responseHeaders,
+  bool empty = false,
 }) async => Json(
   await _request<Map<String, Object?>>(
     client,
@@ -268,6 +374,8 @@ Future<Json> request(
     sessionToken: sessionToken,
     stored: stored,
     context: context,
+    responseHeaders: responseHeaders,
+    empty: empty,
   ),
 );
 
@@ -282,6 +390,8 @@ Future<T> _request<T extends Object>(
   bool stored = true,
   bool persistent = true,
   Map<String, Object?>? context,
+  Map<String, String>? responseHeaders,
+  bool empty = false,
 }) async {
   if (sessionToken == null && stored) {
     sessionToken = (await client._session())?.token;
@@ -328,6 +438,9 @@ Future<T> _request<T extends Object>(
     if (client.clientKey case final key?) {
       req.headers['X-Parse-Client-Key'] = key;
     }
+    if (client.masterKey case final key?) {
+      req.headers['X-Parse-Master-Key'] = key;
+    }
     if (client.installationId case final id?) {
       req.headers['X-Parse-Installation-Id'] = id;
     }
@@ -358,7 +471,8 @@ Future<T> _request<T extends Object>(
       await _backoff(attempt);
       continue;
     }
-    return _decode<T>(client, response, sessionToken, path);
+    responseHeaders?.addAll(response.headers);
+    return _decode<T>(client, response, sessionToken, path, empty: empty);
   }
 }
 
@@ -454,8 +568,9 @@ Future<T> _decode<T extends Object>(
   ParseClient client,
   http.Response response,
   String? sessionToken,
-  String path,
-) async {
+  String path, {
+  bool empty = false,
+}) async {
   // Not response.body: without a charset it decodes as latin1, and the
   // unauthorized response has no Content-Type at all (middlewares.js
   // invalidRequest).
@@ -469,6 +584,7 @@ Future<T> _decode<T extends Object>(
   }
 
   if (status >= 200 && status < 300) {
+    if (empty && response.bodyBytes.isEmpty) decoded = <String, Object?>{};
     if (decoded is T) return decoded;
     throw OtherParseError(text, code: null, status: status);
   }

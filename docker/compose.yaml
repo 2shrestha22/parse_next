@@ -18,6 +18,11 @@ x-parse: &parse
     PARSE_SERVER_CLOUD: /parse-server/cloud/main.js
     PARSE_SERVER_START_LIVE_QUERY_SERVER: "true"
     PARSE_SERVER_LIVE_QUERY: '{"classNames":["Signal"]}'
+    # The server ignores a masterKey in connect unless keyPairs lists it, and
+    # once keyPairs is set it refuses a client that matches none of them, so
+    # the app id, which every client sends, is listed too.
+    PARSE_SERVER_LIVE_QUERY_SERVER_OPTIONS: '{"keyPairs":{"applicationId":"parse-next-it","masterKey":"parse-next-it-master"}}'
+    PARSE_SERVER_PUSH: '{"adapter":"/parse-server/cloud/push.js"}'
     # Password reset fails with 1 without all three (`_throwOnBadEmailConfig`
     # in UsersRouter.js).
     PARSE_SERVER_APP_NAME: parse-next-it

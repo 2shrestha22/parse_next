@@ -7,6 +7,8 @@ import 'package:parse_next/parse_next.dart';
 import 'package:parse_next/src/client.dart';
 import 'package:test/test.dart';
 
+import 'models.dart';
+
 final server = Uri.parse('http://parse.test/parse');
 
 /// Records every request it receives and answers each with [respond].
@@ -22,14 +24,19 @@ final class Recorder {
     return respond();
   });
 
-  ParseClient parse({String? clientKey, String? installationId, Uri? server}) =>
-      ParseClient(
-        server: server ?? Uri.parse('http://parse.test/parse'),
-        appId: 'app',
-        clientKey: clientKey,
-        installationId: installationId,
-        httpClient: client,
-      );
+  ParseClient parse({
+    String? clientKey,
+    String? masterKey,
+    String? installationId,
+    Uri? server,
+  }) => ParseClient(
+    server: server ?? Uri.parse('http://parse.test/parse'),
+    appId: 'app',
+    clientKey: clientKey,
+    masterKey: masterKey,
+    installationId: installationId,
+    httpClient: client,
+  );
 }
 
 final requestIds = <String?>[];
@@ -78,6 +85,31 @@ void main() {
         }
       }
     }
+  });
+
+  test('masterKey is sent beside the session token', () async {
+    final rec = Recorder();
+    await request(rec.parse(masterKey: 'mk'), 'GET', '/x', sessionToken: 't');
+    expect(rec.requests.single.headers, {
+      ...rec.requests.single.headers,
+      'X-Parse-Master-Key': 'mk',
+      'X-Parse-Session-Token': 't',
+    });
+  });
+
+  test('push rejects a query on another class before sending', () async {
+    final rec = Recorder();
+    final client = rec.parse();
+    expect(
+      () => client.push({}, where: client.collection(postSchema).query()),
+      throwsArgumentError,
+    );
+    expect(rec.requests, isEmpty);
+  });
+
+  test('an empty 2xx body is an empty object only when allowed', () async {
+    final rec = Recorder(() => http.Response('', 200));
+    expect(await request(rec.parse(), 'DELETE', '/x', empty: true), isEmpty);
   });
 
   group('url', () {

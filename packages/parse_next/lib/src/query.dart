@@ -496,6 +496,30 @@ final class Query<T, F, O> {
     return response.require<int>('count');
   }
 
+  /// The distinct values of [field] among the matches, undecoded and in no
+  /// set order; `include`, `orderBy`, `limit` and `skip` are not sent. A
+  /// Date comes back as `{"__type":"Date"}` on Mongo and as an ISO string on
+  /// Postgres. Needs [ParseClient.masterKey].
+  Future<List<Object?>> distinct(ExistsField<T> Function(F f) field) async {
+    final response = await request(
+      _client,
+      'POST',
+      '/aggregate/${_collection._schema.className}',
+      body: Json({
+        '_method': 'GET',
+        if (_where case final w?) 'where': w._where,
+        'distinct': field(_fields)._key,
+      }),
+    );
+    return response.require<List<Object?>>('results');
+  }
+
+  /// The database's plan for [find]: an object on Mongo, a list of rows on
+  /// Postgres. Needs [ParseClient.masterKey].
+  Future<Object?> explain() async => (await _get(
+    Json({..._body(limit: _limit ?? _pageSize), 'explain': true}),
+  ))['results'];
+
   /// Every match, fetched 100 at a time in objectId order. Throws
   /// [StateError] when the query has [orderBy], [skip] or [limit], which
   /// the objectId cursor replaces.

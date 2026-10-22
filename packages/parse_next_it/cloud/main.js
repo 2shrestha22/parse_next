@@ -85,3 +85,12 @@ Parse.Cloud.define('headers', request => ({
 Parse.Cloud.beforeLogin(() => {});
 Parse.Cloud.afterLogin(() => {});
 Parse.Cloud.afterLogout(() => {});
+
+Parse.Cloud.define('sentPushes', () => require('./push.js').sent);
+
+// `_JobStatus` keeps neither a job's params nor its result.
+let jobParams;
+Parse.Cloud.job('echoJob', request => {
+  jobParams = request.params;
+});
+Parse.Cloud.define('jobParams', () => jobParams);

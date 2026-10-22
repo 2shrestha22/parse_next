@@ -81,6 +81,19 @@ final class Collection<T, F, O> {
     await request(_client, 'DELETE', _object(id), context: context);
   }
 
+  /// Runs [pipeline], such as `[{r'$group': {'_id': r'$tag'}}]`, and returns
+  /// its rows undecoded; a `$group` `_id` comes back as `objectId`. The
+  /// database runs it: Postgres knows only `$group`, `$match`, `$project`,
+  /// `$sort`, `$limit` and `$skip` (`aggregate` in
+  /// PostgresStorageAdapter.js). Needs [ParseClient.masterKey].
+  Future<List<Json>> aggregate(List<Map<String, Object?>> pipeline) async =>
+      (await request(
+        _client,
+        'POST',
+        '/aggregate/${_schema.className}',
+        body: Json({'_method': 'GET', 'pipeline': pipeline}),
+      )).requireList<Json>('results');
+
   Json _createBody(T value, Acl? acl, [String? id]) => Json({
     ..._withoutNulls(_schema.encode(value)),
     if (acl != null) 'ACL': acl.toJson(),

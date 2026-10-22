@@ -26,9 +26,11 @@ final class Backend {
     http.Client? httpClient,
     int attempts = 1,
     bool idempotency = false,
+    bool master = false,
   }) => ParseClient(
     server: Uri.parse(url),
     appId: appId,
+    masterKey: master ? masterKey : null,
     installationId: installationId,
     sessions: sessions,
     httpClient: httpClient,

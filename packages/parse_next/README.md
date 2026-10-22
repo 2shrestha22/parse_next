@@ -128,6 +128,25 @@ One WebSocket per client carries every subscription. A lost connection emits `Di
 - `client.uploadFile(bytes, name: ..., contentType: ...)` returns a `ParseFile` to store in a field. It takes `metadata` and `tags` for the files adapter and a `beforeSave(Parse.File)` trigger, `onProgress`, and a `cancel` future. `client.downloadFile(file)` fetches the bytes.
 - A batch goes 20 items to a request, as the JS SDK sends it, except with `send(transaction: true)`.
 
+## On a server: the master key
+
+Dart code that runs on a server can hold the master key; an app never should. A client given one sends it on every request and on the live query connection, bypassing ACLs and class-level permissions as no user. For requests as a user, keep a second client without it.
+
+```dart
+final admin = ParseClient(
+  server: Uri.parse('https://example.com/parse'),
+  appId: 'myAppId',
+  masterKey: Platform.environment['PARSE_MASTER_KEY'],
+);
+```
+
+The server accepts it only from its `masterKeyIps`, localhost by default. Only a master-key client can use these calls:
+
+- `collection.aggregate(pipeline)`, and on a query `distinct((f) => f.tag)` and `explain()`, which all return undecoded JSON.
+- `client.saveConfig(params, masterKeyOnly: {...})`; `client.config()` then also returns the master-only params.
+- `client.deleteFile(file)`, `client.startJob(name, params)` and `client.push(data, channels: [...])` or `push(data, where: installationsQuery)`. The last two return the id of their `_JobStatus` or `_PushStatus` object.
+- `client.schemas()` and `client.schema('Post')`, with `get`, `create`, `update`, `delete` and `purge`; fields and indexes are given as the REST API writes them.
+
 ## Server caveats
 
 MongoDB and Postgres behave differently in places, and some Parse features fail on one of them. The SDK only offers what works on both where it can, and documents the rest on the method concerned. The ones to know before you start:

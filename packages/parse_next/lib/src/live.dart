@@ -157,6 +157,7 @@ final class _LiveSocket {
       'op': 'connect',
       'applicationId': _client.appId,
       'clientKey': ?_client.clientKey,
+      'masterKey': ?_client.masterKey,
       'installationId': ?_client.installationId,
     });
   }
