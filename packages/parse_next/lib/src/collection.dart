@@ -141,17 +141,38 @@ Json _withoutNulls(Json encoded) =>
 /// The object a create stored, from what was [sent] and the [response],
 /// which has no `updatedAt`.
 Json _created(Json sent, Json response) => Json(
-  {...sent, ...response, 'updatedAt': response['createdAt']}
+  {...sent, ..._unloaded(response), 'updatedAt': response['createdAt']}
     // A field a beforeSave trigger unset comes back as a Delete op
     // (`_updateResponseWithData` in parse-server's RestWrite.js).
     ..removeWhere((_, v) => v is Map<String, Object?> && v['__op'] == 'Delete'),
 );
 
+/// Never decoded as an include: when an afterSave trigger saves or fetches an
+/// object this one points to, the server returns that object, with only the
+/// fields the trigger had, in place of the Pointer (`_updateResponseWithData`
+/// in parse-server's RestWrite.js), even when the write left the field alone.
+Json _unloaded(Json response) => Json({
+  for (final MapEntry(:key, :value) in response.entries)
+    key: switch (value) {
+      List<Object?>() => [for (final e in value) _asPointer(e)],
+      _ => _asPointer(value),
+    },
+});
+
+Object? _asPointer(Object? v) => switch (v) {
+  {'__type': 'Object', 'className': final c, 'objectId': final id} => {
+    '__type': 'Pointer',
+    'className': c,
+    'objectId': id,
+  },
+  _ => v,
+};
+
 /// What [Collection.update] or [Collection.replace] changed.
 final class UpdateResult<T> {
   UpdateResult._(this._schema, this._sent, Json response)
     : updatedAt = response.require<DateTime>('updatedAt'),
-      _response = response;
+      _response = _unloaded(response);
 
   final ParseSchema<T, Object?, Object?> _schema;
   final Json _sent;

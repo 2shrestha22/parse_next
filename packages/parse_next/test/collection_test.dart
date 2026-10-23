@@ -11,6 +11,16 @@ import 'models.dart';
 const updatedAt = '2024-01-02T03:04:05.678Z';
 const delete = {'__op': 'Delete'};
 
+/// Neither has the required `name`, so decoding one as loaded would fail.
+const triggerSaved = {
+  '__type': 'Object',
+  'className': 'Author',
+  'objectId': 'a1',
+  'count': 2,
+  'updatedAt': updatedAt,
+};
+const triggerFetched = {...triggerSaved, 'createdAt': updatedAt};
+
 final class Server {
   Server([this.response = const {'updatedAt': updatedAt}]);
 
@@ -318,6 +328,23 @@ void main() {
       expect(doc.data.slug, isNull);
       expect(doc.acl, isNull);
     });
+
+    test('an object an afterSave trigger touched stays a Pointer', () async {
+      final s = Server({
+        ...created,
+        'author': triggerSaved,
+        'coauthors': [triggerFetched, triggerSaved],
+      });
+      final doc = await s.posts.create(
+        const Post(author: Pointer('a1'), coauthors: [Pointer('a1')]),
+      );
+      expect(doc.data.author?.id, 'a1');
+      expect(doc.data.author?.loaded, isNull);
+      expect(
+        [for (final p in doc.data.coauthors!) (p.id, p.loaded)],
+        [('a1', null), ('a1', null)],
+      );
+    });
   });
 
   group('UpdateResult.applyTo', () {
@@ -376,6 +403,21 @@ void main() {
           meta: const Json({'n': 2, 'keep': true, 'gone': 1}),
         ).view,
       );
+    });
+
+    test('an object an afterSave trigger touched stays a Pointer', () async {
+      final s = Server({
+        'updatedAt': updatedAt,
+        'author': triggerFetched,
+        'coauthors': [triggerSaved],
+      });
+      final after = (await s.posts.update(
+        'p1',
+        (o) => [o.title.set('b')],
+      )).applyTo(before);
+      expect(after.data.author?.id, 'a1');
+      expect(after.data.author?.loaded, isNull);
+      expect(after.data.coauthors?.single.loaded, isNull);
     });
 
     test('a map key set or unset without a server value', () async {

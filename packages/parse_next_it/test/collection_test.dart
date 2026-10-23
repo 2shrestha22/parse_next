@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:parse_next/parse_next.dart';
 import 'package:parse_next_it/models/note.dart';
+import 'package:parse_next_it/models/owned.dart';
 import 'package:parse_next_it/models/post.dart';
 import 'package:parse_next_it/models/signal.dart';
 import 'package:parse_next_it/models/user.dart';
@@ -159,6 +160,11 @@ void main() {
         'draft': type('Boolean'),
         'place': type('GeoPoint'),
         'attachment': type('File'),
+      });
+      await backend.resetClass('Owned', {
+        'owner': user,
+        'helpers': type('Array'),
+        'touch': type('String'),
       });
       client = backend.client();
       posts = client.collection(postSchema);
@@ -757,6 +763,88 @@ void main() {
         expect(after.data.likes, 2);
         expect(wire(after.data), wire((await posts.get(before.id)).data));
       });
+    });
+
+    group('an afterSave trigger that saves the users pointed to', () {
+      const ownedSchema = $OwnedSchema();
+      late Collection<Owned, OwnedFields, OwnedOps> owned;
+      late Pointer<User> owner;
+      late Pointer<User> helper;
+
+      setUp(() async {
+        owned = client.collection(ownedSchema);
+        owner = Pointer((await backend.signUp('owner', {'karma': 0})).id);
+        helper = Pointer((await backend.signUp('helper', {'karma': 0})).id);
+      });
+
+      void expectUnloaded(Owned o) {
+        expect((o.owner.id, o.owner.loaded), (owner.id, null));
+        expect(
+          [for (final p in o.helpers) (p.id, p.loaded)],
+          [(helper.id, null)],
+        );
+      }
+
+      for (final touch in Touch.values) {
+        group(touch.name, () {
+          Owned value() => Owned(owner: owner, helpers: [helper], touch: touch);
+
+          test('the server returns them as objects', () async {
+            final r = await backend.rest(
+              'POST',
+              '/classes/Owned',
+              body: ownedSchema.encode(value()),
+            );
+            for (final (sent, got) in [
+              (owner, r['owner']),
+              (helper, (r['helpers']! as List<Object?>).single),
+            ]) {
+              expect(got, containsPair('__type', 'Object'));
+              expect(got, containsPair('objectId', sent.id));
+              expect(
+                got,
+                touch == Touch.save
+                    ? isNot(contains('createdAt'))
+                    : contains('createdAt'),
+              );
+            }
+          });
+
+          test('create, update and replace keep them Pointers', () async {
+            final created = await owned.create(value());
+            expectUnloaded(created.data);
+            final updated = (await owned.update(
+              created.id,
+              (o) => [o.touch.set(touch)],
+            )).applyTo(created);
+            expectUnloaded(updated.data);
+            final replaced = (await owned.replace(
+              created.id,
+              value(),
+            )).applyTo(updated);
+            expectUnloaded(replaced.data);
+            expect(replaced.updatedAt, (await owned.get(created.id)).updatedAt);
+          });
+
+          test('so do batch create and update', () async {
+            final existing = await owned.create(value());
+            final b = client.batch();
+            final created = b.create(owned, value());
+            final updated = b.update(
+              owned,
+              existing.id,
+              (o) => [o.touch.set(touch)],
+            );
+            await b.send();
+            expectUnloaded((created.result as Ok<Doc<Owned>>).value.data);
+            expectUnloaded(
+              (updated.result as Ok<UpdateResult<Owned>>).value
+                  .applyTo(existing)
+                  .data,
+            );
+          });
+        });
+      }
     });
 
     group('map values', () {

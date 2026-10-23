@@ -7,6 +7,17 @@ Parse.Cloud.beforeSave('Note', request => {
   request.object.unset('draft');
 });
 
+// Through the instances on request.object, not fresh ones: saving those is
+// what puts the users into the save response, as an app's owner counter does.
+Parse.Cloud.afterSave('Owned', async ({ object }) => {
+  for (const user of [object.get('owner'), ...object.get('helpers')]) {
+    if (object.get('touch') === 'fetchThenSave') {
+      await user.fetch({ useMasterKey: true });
+    }
+    await user.increment('karma').save(null, { useMasterKey: true });
+  }
+});
+
 Parse.Cloud.define('sentMail', () => require('./email.js').sent);
 
 for (const type of [
